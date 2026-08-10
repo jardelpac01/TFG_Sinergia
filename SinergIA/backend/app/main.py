@@ -9,4 +9,4 @@ app.include_router(insert_openalex_data_router)
 
 @app.get("/")
 def read_root():
-    return {""}
+    return {"status": "ok"}
