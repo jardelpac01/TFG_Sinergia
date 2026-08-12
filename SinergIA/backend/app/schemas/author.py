@@ -28,3 +28,20 @@ class AuthorReadLite(SQLModel):
 class AuthorReadWithRelationships(AuthorRead):
     last_known_institution: Optional[InstitutionRead] = None
     topics: List[TopicRead] = []
+
+class CoAuthorConnection(SQLModel):
+    id: str
+    display_name: str
+    shared_works_count: int
+
+class CountryConnection(SQLModel):
+    country_code: Optional[str] = None
+    works_count: int
+
+class AuthorNetwork(SQLModel):
+    author: AuthorReadLite
+    coauthors: List[CoAuthorConnection] = []
+    country_collaborations: List[CountryConnection] = []
+
+class AuthorReadWithWorks(AuthorReadWithRelationships):
+    works: List["WorkReadLite"] = []
