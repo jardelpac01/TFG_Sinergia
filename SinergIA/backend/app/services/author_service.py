@@ -1,0 +1,51 @@
+from typing import List, Optional
+
+from sqlmodel import Session
+
+from app.models import Author, Work
+from app.repositories.author_repository import AuthorRepository
+from app.schemas.author import AuthorReadLite, AuthorNetwork, CoAuthorConnection, CountryConnection
+
+
+class AuthorService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.repository = AuthorRepository(db)
+
+    def get_author(self, author_id: str) -> Optional[Author]:
+        return self.repository.get_author(author_id)
+
+    def get_author_works(self, author_id: str) -> List[Work]:
+        return self.repository.get_author_works(author_id)
+
+    def get_author_network(self, author_id: str) -> Optional[AuthorNetwork]:
+        author = self.get_author(author_id)
+        if not author:
+            return None
+
+        coauthors = [
+            CoAuthorConnection(
+                id=coauthor.id,
+                display_name=coauthor.display_name,
+                shared_works_count=int(coauthor.shared_works_count),
+            )
+            for coauthor in self.repository.get_coauthors(author_id)
+        ]
+
+        countries = [
+            CountryConnection(
+                country_code=country.country_code,
+                works_count=int(country.works_count),
+            )
+            for country in self.repository.get_country_collaborations(author_id)
+        ]
+
+        return AuthorNetwork(
+            author=AuthorReadLite(
+                id=author.id,
+                display_name=author.display_name,
+                orcid=author.orcid,
+            ),
+            coauthors=coauthors,
+            country_collaborations=countries,
+        )
