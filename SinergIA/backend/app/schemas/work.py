@@ -18,6 +18,11 @@ class WorkBase(SQLModel):
     is_retracted: bool = False
     type: Optional[str] = None
 
+
+class WorkReadLite(WorkBase):
+    source_id: Optional[str] = None
+
+
 class WorkCreate(WorkBase):
     source_id: Optional[str] = None
 

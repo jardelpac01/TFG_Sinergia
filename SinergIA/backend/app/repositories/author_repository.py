@@ -1,3 +1,5 @@
+from typing import Optional
+
 from sqlalchemy import desc, func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
@@ -8,6 +10,16 @@ from app.models import Author, AuthorWork, AuthorWorkAffiliation, Institution, W
 class AuthorRepository:
     def __init__(self, db: Session):
         self.db = db
+
+    def list_authors(self, q: Optional[str] = None, limit: int = 50):
+        statement = select(Author)
+        if q:
+            search = f"%{q.lower()}%"
+            statement = statement.where(
+                (Author.display_name.ilike(search)) | (Author.orcid.ilike(search))
+            )
+        statement = statement.order_by(Author.display_name.asc()).limit(limit)
+        return self.db.exec(statement).all()
 
     def get_author(self, author_id: str):
         statement = (

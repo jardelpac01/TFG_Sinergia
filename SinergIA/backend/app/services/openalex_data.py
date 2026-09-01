@@ -1,18 +1,41 @@
 import re
+import time
 import requests
 from sqlalchemy.orm import Session
 
 from app.repositories.ingestion_openalex_data import IngestionRepository
+from app.services.author_identity import AuthorIdentityService
 
 
 HEADERS = {"User-Agent": "SinergiaTFG/1.0"}
 ORCID_REGEX = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
+
+class OpenAlexUpstreamError(Exception):
+    """Raised when OpenAlex cannot be reached or returns a non-recoverable error."""
 
 
 class OpenAlexService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = IngestionRepository(db)
+        self.author_identity = AuthorIdentityService()
+
+    def upsert_author(self, author_data: dict) -> str | None:
+        author_data = self.author_identity.prepare_author_data(author_data)
+        orcid = author_data["orcid"]
+        existing_author = self.repo.get_author_by_orcid(orcid) if orcid else None
+        if existing_author is None:
+            existing_author = self.author_identity.find_matching_author(
+                display_name=author_data["display_name"],
+                institution_id=author_data.get("last_known_institution_id"),
+                candidates=self.repo.get_authors_with_display_name(),
+                orcid=orcid,
+            )
+        if existing_author is None and author_data.get("id"):
+            existing_author = self.repo.get_author(author_data["id"])
+        return self.repo.upsert_author(author_data, existing_author)
 
     def clean_id(self, url: str) -> str | None:
         """Extracts the OpenAlex entity ID from a full URL (e.g. https://openalex.org/A123 → A123)."""
@@ -20,11 +43,46 @@ class OpenAlexService:
             return None
         return url.split("/")[-1]
 
-    def _fetch_json(self, url: str) -> dict | None:
-        response = requests.get(url, headers=HEADERS, timeout=30)
-        if response.status_code != 200:
-            return None
-        return response.json()
+    def _fetch_json(
+        self,
+        url: str,
+        params: dict | None = None,
+        max_attempts: int = 4,
+        backoff_seconds: float = 1.0,
+    ) -> dict | None:
+        attempt = 1
+        while attempt <= max_attempts:
+            try:
+                response = requests.get(url, headers=HEADERS, params=params, timeout=30)
+            except requests.RequestException as exc:
+                if attempt == max_attempts:
+                    raise OpenAlexUpstreamError(
+                        f"OpenAlex request failed after {max_attempts} attempts: {exc}"
+                    ) from exc
+                time.sleep(backoff_seconds * attempt)
+                attempt += 1
+                continue
+
+            if response.status_code == 200:
+                return response.json()
+
+            if response.status_code == 404:
+                return None
+
+            if response.status_code in RETRYABLE_STATUS_CODES:
+                if attempt == max_attempts:
+                    raise OpenAlexUpstreamError(
+                        f"OpenAlex temporary error {response.status_code} after {max_attempts} attempts."
+                    )
+                time.sleep(backoff_seconds * attempt)
+                attempt += 1
+                continue
+
+            raise OpenAlexUpstreamError(
+                f"OpenAlex returned unexpected status {response.status_code}."
+            )
+
+        raise OpenAlexUpstreamError("OpenAlex request failed.")
 
     def store_institution(self, institution_data: dict | None) -> str | None:
         """Persists an institution from OpenAlex and returns its normalized ID."""
@@ -84,6 +142,97 @@ class OpenAlexService:
         })
         return source_id
 
+    def search_authors_by_name(self, name: str, page: int = 1, per_page: int = 10) -> tuple[int, list[dict]]:
+        """Searches OpenAlex authors by name and returns normalized candidates."""
+        data = self._fetch_json(
+            "https://api.openalex.org/authors",
+            params={"search": name, "page": page, "per-page": per_page},
+        )
+        if not data:
+            return 0, []
+
+        items: list[dict] = []
+        for author_data in data.get("results", []):
+            openalex_id = self.clean_id(author_data.get("id"))
+            if not openalex_id:
+                continue
+
+            last_known_institution = author_data.get("last_known_institution") or {}
+            display_name_alternatives = [
+                str(value).strip()
+                for value in (author_data.get("display_name_alternatives") or [])
+                if str(value).strip()
+            ]
+            items.append(
+                {
+                    "openalex_id": openalex_id,
+                    "display_name": author_data.get("display_name") or "Unknown",
+                    "display_name_alternatives": display_name_alternatives,
+                    "orcid": author_data.get("orcid"),
+                    "works_count": int(author_data.get("works_count", 0) or 0),
+                    "cited_by_count": int(author_data.get("cited_by_count", 0) or 0),
+                    "last_known_institution": last_known_institution.get("display_name"),
+                }
+            )
+
+        total_results = int((data.get("meta") or {}).get("count", 0) or 0)
+        return total_results, items
+
+    def search_and_ingest_author_by_name(self, name: str, force: bool = False, per_page: int = 10) -> dict:
+        """Searches authors by name and ingests only safe matches unless force is enabled."""
+        total_results, candidates = self.search_authors_by_name(name=name, page=1, per_page=per_page)
+
+        if not candidates:
+            return {"status": "not_found", "total_results": total_results, "candidates": []}
+
+        normalized_name = name.strip().casefold()
+        exact_matches = [
+            candidate
+            for candidate in candidates
+            if (candidate.get("display_name") or "").strip().casefold() == normalized_name
+            or normalized_name in {
+                alternative.strip().casefold()
+                for alternative in candidate.get("display_name_alternatives", [])
+            }
+        ]
+
+        selected_candidate = None
+        selected_by = None
+
+        if len(exact_matches) == 1:
+            selected_candidate = exact_matches[0]
+            selected_by = "exact_name_or_alternative_match"
+        elif len(candidates) == 1:
+            selected_candidate = candidates[0]
+            selected_by = "single_result"
+        elif force:
+            selected_candidate = candidates[0]
+            selected_by = "forced_first_result"
+        else:
+            return {
+                "status": "ambiguous",
+                "total_results": total_results,
+                "selected_by": None,
+                "candidates": candidates,
+            }
+
+        author_id = self.fetch_and_store_author_by_identifier(selected_candidate["openalex_id"])
+        if not author_id:
+            return {
+                "status": "not_found",
+                "total_results": total_results,
+                "selected_by": selected_by,
+                "candidates": candidates,
+            }
+
+        return {
+            "status": "ingested",
+            "author_id": author_id,
+            "selected_by": selected_by,
+            "total_results": total_results,
+            "candidates": candidates,
+        }
+
     def fetch_and_store_author(self, orcid: str) -> str | None:
         """
         Validates the ORCID format, fetches the author profile from OpenAlex
@@ -106,7 +255,7 @@ class OpenAlexService:
 
         inst_id = self.store_institution(data.get("last_known_institution"))
 
-        self.repo.upsert_author({
+        author_id = self.upsert_author({
             "id": author_id,
             "display_name": data.get("display_name"),
             "orcid": data.get("orcid"),
@@ -208,12 +357,24 @@ class OpenAlexService:
                     if not authorship_author_id:
                         continue
 
+                    authorship_institution_ids = [
+                        institution_id
+                        for institution_id in (
+                            self.store_institution(institution_data)
+                            for institution_data in authorship.get("institutions", [])
+                        )
+                        if institution_id
+                    ]
+
                     # Preserve the main author record and only upsert real co-authors.
                     if authorship_author_id != author_openalex_id:
-                        self.repo.upsert_author({
+                        authorship_author_id = self.upsert_author({
                             "id": authorship_author_id,
                             "display_name": author_data.get("display_name"),
                             "orcid": author_data.get("orcid"),
+                            "last_known_institution_id": (
+                                authorship_institution_ids[0] if authorship_institution_ids else None
+                            ),
                         })
 
                     self.repo.add_author_work_relation(
@@ -223,14 +384,12 @@ class OpenAlexService:
                         is_corr=authorship.get("is_corresponding", False),
                     )
 
-                    for institution_data in authorship.get("institutions", []):
-                        institution_id = self.store_institution(institution_data)
-                        if institution_id:
-                            self.repo.add_author_work_affiliation(
-                                author_id=authorship_author_id,
-                                work_id=work_id,
-                                institution_id=institution_id,
-                            )
+                    for institution_id in authorship_institution_ids:
+                        self.repo.add_author_work_affiliation(
+                            author_id=authorship_author_id,
+                            work_id=work_id,
+                            institution_id=institution_id,
+                        )
 
             self.repo.commit()
             cursor = data.get("meta", {}).get("next_cursor")
@@ -254,7 +413,7 @@ class OpenAlexService:
 
         inst_id = self.store_institution(data.get("last_known_institution"))
 
-        self.repo.upsert_author({
+        author_id = self.upsert_author({
             "id": author_id,
             "display_name": data.get("display_name"),
             "orcid": data.get("orcid"),
@@ -342,12 +501,24 @@ class OpenAlexService:
             if not authorship_author_id:
                 continue
 
+            authorship_institution_ids = [
+                institution_id
+                for institution_id in (
+                    self.store_institution(institution_data)
+                    for institution_data in authorship.get("institutions", [])
+                )
+                if institution_id
+            ]
+
             # Keep the main author record intact and only upsert true co-authors.
             if authorship_author_id != self.clean_id(data.get("id")):
-                self.repo.upsert_author({
+                authorship_author_id = self.upsert_author({
                     "id": authorship_author_id,
                     "display_name": author_data.get("display_name"),
                     "orcid": author_data.get("orcid"),
+                    "last_known_institution_id": (
+                        authorship_institution_ids[0] if authorship_institution_ids else None
+                    ),
                 })
 
             self.repo.add_author_work_relation(
@@ -357,14 +528,12 @@ class OpenAlexService:
                 is_corr=authorship.get("is_corresponding", False),
             )
 
-            for institution_data in authorship.get("institutions", []):
-                institution_id = self.store_institution(institution_data)
-                if institution_id:
-                    self.repo.add_author_work_affiliation(
-                        author_id=authorship_author_id,
-                        work_id=work_id,
-                        institution_id=institution_id,
-                    )
+            for institution_id in authorship_institution_ids:
+                self.repo.add_author_work_affiliation(
+                    author_id=authorship_author_id,
+                    work_id=work_id,
+                    institution_id=institution_id,
+                )
 
         self.repo.commit()
         return work_id

@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlmodel import select
 
 from app.models import (
     Author,
@@ -17,17 +18,53 @@ class IngestionRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def upsert_author(self, author_data: dict):
-        self.db.merge(Author(
-            id=author_data.get("id"),
-            display_name=author_data.get("display_name"),
-            orcid=author_data.get("orcid"),
+    def get_author_by_orcid(self, orcid: str):
+        return self.db.exec(select(Author).where(Author.orcid == orcid)).first()
+
+    def get_authors_with_display_name(self):
+        return self.db.exec(select(Author).where(Author.display_name.is_not(None))).all()
+
+    def get_author(self, author_id: str):
+        return self.db.get(Author, author_id)
+
+    def upsert_author(self, author_data: dict, existing_author: Author | None = None):
+        author_id = author_data.get("id")
+        orcid = author_data.get("orcid")
+        display_name = author_data.get("display_name")
+        institution_id = author_data.get("last_known_institution_id")
+        is_full_profile = "works_count" in author_data
+
+        if existing_author is not None:
+            if is_full_profile or not existing_author.display_name or existing_author.display_name == "Unknown":
+                if display_name:
+                    existing_author.display_name = display_name
+            if not existing_author.orcid and orcid:
+                existing_author.orcid = orcid
+            if author_data.get("h_index") is not None:
+                existing_author.h_index = author_data.get("h_index", existing_author.h_index or 0)
+            if author_data.get("works_count") is not None:
+                existing_author.works_count = author_data.get("works_count", existing_author.works_count or 0)
+            if author_data.get("cited_by_count") is not None:
+                existing_author.cited_by_count = author_data.get("cited_by_count", existing_author.cited_by_count or 0)
+            if "counts_by_year" in author_data and author_data.get("counts_by_year") is not None:
+                existing_author.counts_by_year = author_data.get("counts_by_year")
+            if institution_id is not None:
+                existing_author.last_known_institution_id = institution_id
+            self.db.add(existing_author)
+            return existing_author.id
+
+        new_author = Author(
+            id=author_id,
+            display_name=display_name,
+            orcid=orcid,
             h_index=author_data.get("h_index", 0),
             works_count=author_data.get("works_count", 0),
             cited_by_count=author_data.get("cited_by_count", 0),
             counts_by_year=author_data.get("counts_by_year", {}),
-            last_known_institution_id=author_data.get("last_known_institution_id"),
-        ))
+            last_known_institution_id=institution_id,
+        )
+        self.db.merge(new_author)
+        return author_id
 
     def upsert_institution(self, inst_data: dict):
         self.db.merge(Institution(
