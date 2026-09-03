@@ -6,6 +6,7 @@ from app.models.author_work_afiliation import AuthorWorkAffiliation
 from app.models.author_yearly_metric import AuthorYearlyMetric
 from app.models.concept import Concept
 from app.models.institution import Institution
+from app.models.research_group import ResearchGroup
 from app.models.source import Source
 from app.models.topic import Topic
 from app.models.user import User

@@ -3,6 +3,7 @@ from typing import Optional, List, Any
 from datetime import datetime
 from .topic import TopicRead
 from .institution import InstitutionRead
+from .research_group import ResearchGroupRead
 
 class AuthorBase(SQLModel):
     id: str
@@ -15,9 +16,11 @@ class AuthorBase(SQLModel):
 
 class AuthorCreate(AuthorBase):
     last_known_institution_id: Optional[str] = None
+    research_group_id: Optional[int] = None
 
 class AuthorRead(AuthorBase):
     last_known_institution_id: Optional[str]
+    research_group_id: Optional[int] = None
     updated_at: datetime
 
 class AuthorReadLite(SQLModel):
@@ -27,6 +30,7 @@ class AuthorReadLite(SQLModel):
 
 class AuthorReadWithRelationships(AuthorRead):
     last_known_institution: Optional[InstitutionRead] = None
+    research_group: Optional[ResearchGroupRead] = None
     topics: List[TopicRead] = []
 
 class CoAuthorConnection(SQLModel):

@@ -20,9 +20,11 @@ class Author(SQLModel, table=True):
     raw_data: Any = Field(default=None, sa_column=Column(JSONB))
 
     last_known_institution_id: Optional[str] = Field(default=None, foreign_key="institutions.id")
+    research_group_id: Optional[int] = Field(default=None, foreign_key="research_groups.id")
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     last_known_institution: Optional["Institution"] = Relationship(back_populates="authors")
+    research_group: Optional["ResearchGroup"] = Relationship(back_populates="authors")
     works: List["Work"] = Relationship(back_populates="authors", link_model=AuthorWork)
     topics: List["Topic"] = Relationship(link_model=AuthorTopic)
     user: Optional["User"] = Relationship(back_populates="author")
