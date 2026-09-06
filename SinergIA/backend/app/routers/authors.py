@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from app.database import get_db
-from app.schemas.author import AuthorNetwork, AuthorReadLite
+from app.schemas.author import AuthorCollaboratorsResponse, AuthorNetwork, AuthorReadLite
 from app.schemas.work import WorkReadWithRelationships
 from app.services.author_service import AuthorService
 
@@ -20,6 +20,37 @@ def list_authors(
 ):
     service = AuthorService(db)
     return service.list_authors(q=q, limit=limit)
+
+@router.get("/collaborators/by-name", response_model=AuthorCollaboratorsResponse)
+def get_collaborators_by_name(
+    name: str = Query(..., min_length=2),
+    db: Session = Depends(get_db),
+):
+    service = AuthorService(db)
+    matches = service.get_authors_by_name(name)
+
+    if not matches:
+        raise HTTPException(status_code=404, detail=f"No author matching '{name}' was found in the database.")
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"The name '{name}' matched {len(matches)} authors in the database. Refine the name.",
+                "candidates": [
+                    {"id": author.id, "display_name": author.display_name, "orcid": author.orcid}
+                    for author in matches
+                ],
+            },
+        )
+
+    author = matches[0]
+    collaborators = service.get_collaborators_with_location(author.id)
+
+    return AuthorCollaboratorsResponse(
+        author=AuthorReadLite(id=author.id, display_name=author.display_name, orcid=author.orcid),
+        collaborators=collaborators or [],
+    )
+
 
 @router.get("/{author_id}", response_model=AuthorReadLite)
 def get_author(author_id: str, db: Session = Depends(get_db)):

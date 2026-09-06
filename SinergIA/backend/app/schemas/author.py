@@ -47,5 +47,18 @@ class AuthorNetwork(SQLModel):
     coauthors: List[CoAuthorConnection] = []
     country_collaborations: List[CountryConnection] = []
 
+class CoAuthorLocation(SQLModel):
+    id: str
+    display_name: str
+    orcid: Optional[str] = None
+    shared_works_count: int
+    institution_name: Optional[str] = None
+    country_code: Optional[str] = None
+    city: Optional[str] = None
+
+class AuthorCollaboratorsResponse(SQLModel):
+    author: AuthorReadLite
+    collaborators: List[CoAuthorLocation] = []
+
 class AuthorReadWithWorks(AuthorReadWithRelationships):
     works: List["WorkReadLite"] = []

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_, text
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -51,6 +51,42 @@ class AuthorRepository:
             .where(AuthorWork.work_id.in_(work_ids_subquery))
             .where(Author.id != author_id)
             .group_by(Author.id, Author.display_name)
+            .order_by(desc("shared_works_count"))
+        )
+        return self.db.exec(statement).all()
+
+    def get_author_by_name(self, name: str):
+        search = f"%{name.strip().lower()}%"
+        alternatives_match = text(
+            """
+            EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(
+                    COALESCE(authors.display_name_alternatives, '[]'::jsonb)
+                ) AS alt(value)
+                WHERE alt.value ILIKE :search
+            )
+            """
+        ).bindparams(search=search)
+        statement = (
+            select(Author)
+            .where(or_(Author.display_name.ilike(search), alternatives_match))
+            .order_by(Author.display_name.asc())
+        )
+        return self.db.exec(statement).all()
+
+    def get_coauthors_with_location(self, author_id: str):
+        work_ids_subquery = select(AuthorWork.work_id).where(AuthorWork.author_id == author_id)
+        statement = (
+            select(
+                Author,
+                func.count(func.distinct(AuthorWork.work_id)).label("shared_works_count"),
+            )
+            .join(AuthorWork, Author.id == AuthorWork.author_id)
+            .where(AuthorWork.work_id.in_(work_ids_subquery))
+            .where(Author.id != author_id)
+            .options(selectinload(Author.last_known_institution))
+            .group_by(Author.id)
             .order_by(desc("shared_works_count"))
         )
         return self.db.exec(statement).all()

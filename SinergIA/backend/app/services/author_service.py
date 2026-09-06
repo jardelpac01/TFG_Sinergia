@@ -4,7 +4,7 @@ from sqlmodel import Session
 
 from app.models import Author, Work
 from app.repositories.author_repository import AuthorRepository
-from app.schemas.author import AuthorReadLite, AuthorNetwork, CoAuthorConnection, CountryConnection
+from app.schemas.author import AuthorReadLite, AuthorNetwork, CoAuthorConnection, CoAuthorLocation, CountryConnection
 
 
 class AuthorService:
@@ -17,6 +17,9 @@ class AuthorService:
 
     def get_author(self, author_id: str) -> Optional[Author]:
         return self.repository.get_author(author_id)
+
+    def get_authors_by_name(self, name: str) -> List[Author]:
+        return self.repository.get_author_by_name(name)
 
     def get_author_works(self, author_id: str) -> List[Work]:
         return self.repository.get_author_works(author_id)
@@ -52,3 +55,24 @@ class AuthorService:
             coauthors=coauthors,
             country_collaborations=countries,
         )
+
+    def get_collaborators_with_location(self, author_id: str) -> Optional[List[CoAuthorLocation]]:
+        author = self.get_author(author_id)
+        if not author:
+            return None
+
+        collaborators = []
+        for coauthor, shared_works_count in self.repository.get_coauthors_with_location(author_id):
+            institution = coauthor.last_known_institution
+            collaborators.append(
+                CoAuthorLocation(
+                    id=coauthor.id,
+                    display_name=coauthor.display_name,
+                    orcid=coauthor.orcid,
+                    shared_works_count=int(shared_works_count),
+                    institution_name=institution.name if institution else None,
+                    country_code=institution.country_code if institution else None,
+                    city=institution.city if institution else None,
+                )
+            )
+        return collaborators
