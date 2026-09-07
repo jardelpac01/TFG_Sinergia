@@ -11,6 +11,7 @@ class Author(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     display_name: str
+    display_name_alternatives: Any = Field(default=None, sa_column=Column(JSONB))
     orcid: Optional[str] = None
     h_index: int = Field(default=0)
     works_count: int = Field(default=0)

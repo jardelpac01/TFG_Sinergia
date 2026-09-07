@@ -24,6 +24,9 @@ from app.models import author_work_afiliation
 from app.models import work_topic
 from app.models import work_reference
 from app.models import author_yearly_metric
+from app.models import research_group
+from app.models import author_merge_log
+from app.models import prisma_author
 
 
 
