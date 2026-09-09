@@ -56,11 +56,7 @@ class AuthorService:
             country_collaborations=countries,
         )
 
-    def get_collaborators_with_location(self, author_id: str) -> Optional[List[CoAuthorLocation]]:
-        author = self.get_author(author_id)
-        if not author:
-            return None
-
+    def get_collaborators_with_location(self, author_id: str) -> List[CoAuthorLocation]:
         collaborators = []
         for coauthor, shared_works_count in self.repository.get_coauthors_with_location(author_id):
             institution = coauthor.last_known_institution

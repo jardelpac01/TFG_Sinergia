@@ -27,6 +27,7 @@ erDiagram
     AUTHORS {
         string id PK
         string display_name
+        json display_name_alternatives
         string orcid
         int h_index
         int works_count
@@ -34,7 +35,36 @@ erDiagram
         json counts_by_year
         json raw_data
         string last_known_institution_id FK
+        int research_group_id FK
         datetime updated_at
+    }
+
+    RESEARCH_GROUPS {
+        int id PK
+        string name UK
+        string description
+        string website_url
+    }
+
+    PRISMA_AUTHORS {
+        int prisma_id PK
+        string display_name
+        string department "255"
+        string orcid UK "255"
+        string openalex_author_id "255"
+        string dialnet_code "255"
+        datetime updated_at
+    }
+
+    AUTHOR_MERGE_LOGS {
+        int id PK
+        string incoming_author_id "255"
+        string incoming_display_name
+        string matched_author_id FK "255"
+        string matched_display_name
+        float score
+        json score_breakdown
+        datetime created_at
     }
 
     INSTITUTIONS {
@@ -94,15 +124,6 @@ erDiagram
         json raw_data
     }
 
-    CONCEPTS {
-        string id PK
-        string display_name
-        int level
-        string wikidata
-        string description
-        json raw_data
-    }
-
     AUTHOR_WORKS {
         string author_id PK, FK
         string work_id PK, FK
@@ -131,18 +152,6 @@ erDiagram
         float score
     }
 
-    WORK_CONCEPTS {
-        string work_id PK, FK
-        string concept_id PK, FK
-        float score
-    }
-
-    AUTHOR_CONCEPTS {
-        string author_id PK, FK
-        string concept_id PK, FK
-        float score
-    }
-
     WORK_REFERENCES {
         string work_id PK, FK
         string referenced_work_id PK, FK
@@ -160,6 +169,8 @@ erDiagram
     USERS ||--o{ USER_LOGS : "user_id"
 
     AUTHORS ||--o| INSTITUTIONS : "last_known_institution_id"
+    AUTHORS ||--o| RESEARCH_GROUPS : "research_group_id"
+    AUTHORS ||--o| AUTHOR_MERGE_LOGS : "matched_author_id"
     WORKS }o--|| SOURCES : "source_id"
 
     AUTHORS ||--o{ AUTHOR_WORKS : "author_id"
@@ -175,12 +186,6 @@ erDiagram
     AUTHORS ||--o{ AUTHOR_TOPICS : "author_id"
     TOPICS ||--o{ AUTHOR_TOPICS : "topic_id"
 
-    WORKS ||--o{ WORK_CONCEPTS : "work_id"
-    CONCEPTS ||--o{ WORK_CONCEPTS : "concept_id"
-
-    AUTHORS ||--o{ AUTHOR_CONCEPTS : "author_id"
-    CONCEPTS ||--o{ AUTHOR_CONCEPTS : "concept_id"
-
     WORKS ||--o{ WORK_REFERENCES : "work_id"
     WORKS ||--o{ WORK_REFERENCES : "referenced_work_id"
 
@@ -190,7 +195,10 @@ erDiagram
 ## What this schema covers
 
 - `authors` and `works` provide the core of the researcher API: authors, publications, coauthors, affiliations, and topics.
-- `institutions`, `sources`, `topics`, and `concepts` add context for navigation and analysis.
+- `institutions`, `sources`, and `topics` add context for navigation and analysis.
+- `research_groups` lets authors be grouped into research teams.
+- `prisma_authors` stores raw data scraped from the university's Prisma portal, used to cross-reference and enrich `authors` records (e.g. by ORCID).
+- `author_merge_logs` keeps a traceable record of automatic author-matching decisions (incoming identifier vs. matched author, score, and score breakdown).
 - `user_logs` and `users` support basic user management and traceability.
 - `raw_data` in several tables preserves the original OpenAlex payload for future expansion without losing the relational structure.
 
@@ -202,6 +210,8 @@ erDiagram
 - `users.role`: max 20 characters.
 - `user_logs.action` / `user_logs.target_entity`: max 100 characters.
 - `user_logs.ip_address`: max 45 characters.
+- `prisma_authors.department` / `prisma_authors.orcid` / `prisma_authors.openalex_author_id` / `prisma_authors.dialnet_code`: max 255 characters.
+- `author_merge_logs.incoming_author_id` / `author_merge_logs.matched_author_id`: max 255 characters.
 
 ## Notes for the thesis
 

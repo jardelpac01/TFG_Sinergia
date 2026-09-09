@@ -1,11 +1,8 @@
 import re
-import time
 
-import requests
+from app.services.http_client import fetch_with_retries
 
-HEADERS = {"User-Agent": "SinergiaTFG/1.0"}
 BASE_URL = "https://prisma.us.es"
-RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 PROFILE_LINK_RE = re.compile(r"investigador/(\d+)")
 NAME_RE = re.compile(r'<h1[^>]*id="nombre"[^>]*>(.*?)</h1>', re.DOTALL)
@@ -24,22 +21,17 @@ class PrismaScraperError(Exception):
 
 
 def _fetch_html(url: str, max_attempts: int = 4, backoff_seconds: float = 1.0) -> str:
-    attempt = 1
-    while True:
-        try:
-            response = requests.get(url, headers=HEADERS, timeout=30)
-        except requests.RequestException as exc:
-            if attempt >= max_attempts:
-                raise PrismaScraperError(f"Failed to reach {url}: {exc}") from exc
-        else:
-            if response.status_code == 200:
-                return response.text
-            if response.status_code not in RETRYABLE_STATUS_CODES or attempt >= max_attempts:
-                raise PrismaScraperError(
-                    f"Prisma returned status {response.status_code} for {url}"
-                )
-        time.sleep(backoff_seconds * attempt)
-        attempt += 1
+    response = fetch_with_retries(
+        url,
+        on_error=PrismaScraperError,
+        max_attempts=max_attempts,
+        backoff_seconds=backoff_seconds,
+    )
+
+    if response.status_code == 200:
+        return response.text
+
+    raise PrismaScraperError(f"Prisma returned status {response.status_code} for {url}")
 
 
 def _clean_text(value: str) -> str:

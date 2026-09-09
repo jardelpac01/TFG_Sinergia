@@ -9,117 +9,19 @@ from app.schemas.openalex_ingestion import (
     OpenAlexAuthorSearchItem,
     OpenAlexAuthorSearchResponse,
     OpenAlexAuthorsBatchIdentifiersRequest,
-    OpenAlexAuthorsBatchIngestItem,
     OpenAlexAuthorsBatchIngestRequest,
     OpenAlexAuthorsBatchIngestResponse,
     OpenAlexWorkIngestionRequest,
 )
-from app.services.openalex_data import OpenAlexService, OpenAlexUpstreamError
+from app.services.openalex_data import (
+    AuthorNotFoundError,
+    OpenAlexService,
+    OpenAlexUpstreamError,
+    WorkNotFoundError,
+)
 
 
 router = APIRouter(prefix="/openalex", tags=["openalex"])
-
-
-def _ingest_author_identifier(service: OpenAlexService, author_identifier: str) -> str:
-    try:
-        author_id = service.fetch_and_store_author_by_identifier(author_identifier)
-    except OpenAlexUpstreamError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not author_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No author was found for identifier {author_identifier}.",
-        )
-    return author_id
-
-
-def _ingest_work_identifier(service: OpenAlexService, work_identifier: str) -> str:
-    try:
-        work_id = service.fetch_and_store_work_by_identifier(work_identifier)
-    except OpenAlexUpstreamError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not work_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No work was found for identifier {work_identifier}.",
-        )
-    return work_id
-
-
-def _ingest_author_identifier_batch(
-    service: OpenAlexService, identifiers: list[str]
-) -> OpenAlexAuthorsBatchIngestResponse:
-    if not identifiers:
-        raise HTTPException(status_code=400, detail="The identifiers list cannot be empty.")
-
-    results: list[OpenAlexAuthorsBatchIngestItem] = []
-    ingested = 0
-    failed = 0
-
-    for raw_identifier in identifiers:
-        identifier = raw_identifier.strip()
-        if not identifier:
-            failed += 1
-            results.append(
-                OpenAlexAuthorsBatchIngestItem(
-                    identifier=raw_identifier,
-                    status="failed",
-                    error="Identifier value is empty.",
-                )
-            )
-            continue
-
-        try:
-            author_id = service.fetch_and_store_author_by_identifier(identifier)
-        except ValueError as exc:
-            failed += 1
-            results.append(
-                OpenAlexAuthorsBatchIngestItem(
-                    identifier=identifier,
-                    status="failed",
-                    error=str(exc),
-                )
-            )
-            continue
-        except OpenAlexUpstreamError as exc:
-            failed += 1
-            results.append(
-                OpenAlexAuthorsBatchIngestItem(
-                    identifier=identifier,
-                    status="failed",
-                    error=str(exc),
-                )
-            )
-            continue
-
-        if not author_id:
-            failed += 1
-            results.append(
-                OpenAlexAuthorsBatchIngestItem(
-                    identifier=identifier,
-                    status="failed",
-                    error="No author was found in OpenAlex for this identifier.",
-                )
-            )
-            continue
-
-        ingested += 1
-        results.append(
-            OpenAlexAuthorsBatchIngestItem(
-                identifier=identifier,
-                status="ingested",
-                author_id=author_id,
-            )
-        )
-
-    return OpenAlexAuthorsBatchIngestResponse(
-        requested=len(identifiers),
-        ingested=ingested,
-        failed=failed,
-        results=results,
-    )
 
 
 @router.get("/authors/search", response_model=OpenAlexAuthorSearchResponse)
@@ -163,13 +65,13 @@ def ingest_author_from_name_search(
 
     return OpenAlexAuthorSearchAndIngestResponse(
         query=payload.name,
-        status=result["status"],
-        total_results=int(result.get("total_results", 0) or 0),
-        selected_by=result.get("selected_by"),
-        author_id=result.get("author_id"),
+        status=result.status,
+        total_results=result.total_results,
+        selected_by=result.selected_by,
+        author_id=result.author_id,
         candidates=[
             OpenAlexAuthorSearchItem(**candidate)
-            for candidate in result.get("candidates", [])
+            for candidate in result.candidates
         ],
     )
 
@@ -182,71 +84,11 @@ def ingest_authors_by_orcid_batch(
         raise HTTPException(status_code=400, detail="The ORCID list cannot be empty.")
 
     service = OpenAlexService(db)
-    results: list[OpenAlexAuthorsBatchIngestItem] = []
-    ingested = 0
-    failed = 0
-
-    for raw_orcid in payload.orcids:
-        orcid = raw_orcid.strip()
-        if not orcid:
-            failed += 1
-            results.append(
-                OpenAlexAuthorsBatchIngestItem(
-                    identifier=raw_orcid,
-                    status="failed",
-                    error="ORCID value is empty.",
-                )
-            )
-            continue
-
-        try:
-            author_id = service.fetch_and_store_author(orcid)
-        except ValueError as exc:
-            failed += 1
-            results.append(
-                OpenAlexAuthorsBatchIngestItem(
-                    identifier=orcid,
-                    status="failed",
-                    error=str(exc),
-                )
-            )
-            continue
-        except OpenAlexUpstreamError as exc:
-            failed += 1
-            results.append(
-                OpenAlexAuthorsBatchIngestItem(
-                    identifier=orcid,
-                    status="failed",
-                    error=str(exc),
-                )
-            )
-            continue
-
-        if not author_id:
-            failed += 1
-            results.append(
-                OpenAlexAuthorsBatchIngestItem(
-                    identifier=orcid,
-                    status="failed",
-                    error="No author was found in OpenAlex for this ORCID.",
-                )
-            )
-            continue
-
-        ingested += 1
-        results.append(
-            OpenAlexAuthorsBatchIngestItem(
-                identifier=orcid,
-                status="ingested",
-                author_id=author_id,
-            )
-        )
-
-    return OpenAlexAuthorsBatchIngestResponse(
-        requested=len(payload.orcids),
-        ingested=ingested,
-        failed=failed,
-        results=results,
+    return service.ingest_authors_batch(
+        identifiers=payload.orcids,
+        ingest_author=service.fetch_and_store_author,
+        empty_identifier_message="ORCID value is empty.",
+        not_found_message="No author was found in OpenAlex for this ORCID.",
     )
 
 
@@ -254,8 +96,16 @@ def ingest_authors_by_orcid_batch(
 def ingest_authors_by_identifier_batch(
     payload: OpenAlexAuthorsBatchIdentifiersRequest, db: Session = Depends(get_db)
 ):
+    if not payload.identifiers:
+        raise HTTPException(status_code=400, detail="The identifiers list cannot be empty.")
+
     service = OpenAlexService(db)
-    return _ingest_author_identifier_batch(service, payload.identifiers)
+    return service.ingest_authors_batch(
+        identifiers=payload.identifiers,
+        ingest_author=service.fetch_and_store_author_by_identifier,
+        empty_identifier_message="Identifier value is empty.",
+        not_found_message="No author was found in OpenAlex for this identifier.",
+    )
 
 
 @router.post("/author-ingestions")
@@ -269,7 +119,12 @@ def ingest_author_by_identifier(
         raise HTTPException(status_code=400, detail="Author identifier is required.")
 
     service = OpenAlexService(db)
-    author_id = _ingest_author_identifier(service, identifier)
+    try:
+        author_id = service.fetch_and_store_author_or_raise(identifier)
+    except AuthorNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except OpenAlexUpstreamError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {
         "message": "OpenAlex author data ingested successfully.",
@@ -289,7 +144,12 @@ def ingest_work_by_identifier(
         raise HTTPException(status_code=400, detail="Work identifier is required.")
 
     service = OpenAlexService(db)
-    work_id = _ingest_work_identifier(service, identifier)
+    try:
+        work_id = service.fetch_and_store_work_or_raise(identifier)
+    except WorkNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except OpenAlexUpstreamError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {
         "message": "OpenAlex work data ingested successfully.",

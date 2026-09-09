@@ -1,19 +1,41 @@
 import re
-import time
-import requests
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
 from sqlalchemy.orm import Session
 
 from app.repositories.ingestion_openalex_data import IngestionRepository
+from app.schemas.openalex_ingestion import (
+    OpenAlexAuthorsBatchIngestItem,
+    OpenAlexAuthorsBatchIngestResponse,
+)
 from app.services.author_identity import AuthorIdentityService
+from app.services.http_client import fetch_with_retries
 
 
-HEADERS = {"User-Agent": "SinergiaTFG/1.0"}
 ORCID_REGEX = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
-RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class OpenAlexUpstreamError(Exception):
     """Raised when OpenAlex cannot be reached or returns a non-recoverable error."""
+
+
+class AuthorNotFoundError(Exception):
+    """Raised when no author can be found in OpenAlex for a given identifier."""
+
+
+class WorkNotFoundError(Exception):
+    """Raised when no work can be found in OpenAlex for a given identifier."""
+
+
+@dataclass
+class AuthorSearchAndIngestResult:
+
+    status: str
+    total_results: int
+    selected_by: str | None = None
+    author_id: str | None = None
+    candidates: list[dict] = field(default_factory=list)
 
 
 class OpenAlexService:
@@ -50,39 +72,23 @@ class OpenAlexService:
         max_attempts: int = 4,
         backoff_seconds: float = 1.0,
     ) -> dict | None:
-        attempt = 1
-        while attempt <= max_attempts:
-            try:
-                response = requests.get(url, headers=HEADERS, params=params, timeout=30)
-            except requests.RequestException as exc:
-                if attempt == max_attempts:
-                    raise OpenAlexUpstreamError(
-                        f"OpenAlex request failed after {max_attempts} attempts: {exc}"
-                    ) from exc
-                time.sleep(backoff_seconds * attempt)
-                attempt += 1
-                continue
+        response = fetch_with_retries(
+            url,
+            on_error=OpenAlexUpstreamError,
+            params=params,
+            max_attempts=max_attempts,
+            backoff_seconds=backoff_seconds,
+        )
 
-            if response.status_code == 200:
-                return response.json()
+        if response.status_code == 200:
+            return response.json()
 
-            if response.status_code == 404:
-                return None
+        if response.status_code == 404:
+            return None
 
-            if response.status_code in RETRYABLE_STATUS_CODES:
-                if attempt == max_attempts:
-                    raise OpenAlexUpstreamError(
-                        f"OpenAlex temporary error {response.status_code} after {max_attempts} attempts."
-                    )
-                time.sleep(backoff_seconds * attempt)
-                attempt += 1
-                continue
-
-            raise OpenAlexUpstreamError(
-                f"OpenAlex returned unexpected status {response.status_code}."
-            )
-
-        raise OpenAlexUpstreamError("OpenAlex request failed.")
+        raise OpenAlexUpstreamError(
+            f"OpenAlex returned unexpected status {response.status_code}."
+        )
 
     def store_institution(self, institution_data: dict | None) -> str | None:
         """Persists an institution from OpenAlex and returns its normalized ID."""
@@ -178,12 +184,14 @@ class OpenAlexService:
         total_results = int((data.get("meta") or {}).get("count", 0) or 0)
         return total_results, items
 
-    def search_and_ingest_author_by_name(self, name: str, force: bool = False, per_page: int = 10) -> dict:
+    def search_and_ingest_author_by_name(
+        self, name: str, force: bool = False, per_page: int = 10
+    ) -> AuthorSearchAndIngestResult:
         """Searches authors by name and ingests only safe matches unless force is enabled."""
         total_results, candidates = self.search_authors_by_name(name=name, page=1, per_page=per_page)
 
         if not candidates:
-            return {"status": "not_found", "total_results": total_results, "candidates": []}
+            return AuthorSearchAndIngestResult(status="not_found", total_results=total_results, candidates=[])
 
         normalized_name = name.strip().casefold()
         exact_matches = [
@@ -209,29 +217,29 @@ class OpenAlexService:
             selected_candidate = candidates[0]
             selected_by = "forced_first_result"
         else:
-            return {
-                "status": "ambiguous",
-                "total_results": total_results,
-                "selected_by": None,
-                "candidates": candidates,
-            }
+            return AuthorSearchAndIngestResult(
+                status="ambiguous",
+                total_results=total_results,
+                selected_by=None,
+                candidates=candidates,
+            )
 
         author_id = self.fetch_and_store_author_by_identifier(selected_candidate["openalex_id"])
         if not author_id:
-            return {
-                "status": "not_found",
-                "total_results": total_results,
-                "selected_by": selected_by,
-                "candidates": candidates,
-            }
+            return AuthorSearchAndIngestResult(
+                status="not_found",
+                total_results=total_results,
+                selected_by=selected_by,
+                candidates=candidates,
+            )
 
-        return {
-            "status": "ingested",
-            "author_id": author_id,
-            "selected_by": selected_by,
-            "total_results": total_results,
-            "candidates": candidates,
-        }
+        return AuthorSearchAndIngestResult(
+            status="ingested",
+            author_id=author_id,
+            selected_by=selected_by,
+            total_results=total_results,
+            candidates=candidates,
+        )
 
     def fetch_and_store_author(self, orcid: str) -> str | None:
         """
@@ -537,3 +545,88 @@ class OpenAlexService:
 
         self.repo.commit()
         return work_id
+
+    def fetch_and_store_author_or_raise(self, author_identifier: str) -> str:
+        """Same as fetch_and_store_author_by_identifier, but raises AuthorNotFoundError
+        instead of returning None when no author is found.
+        """
+        author_id = self.fetch_and_store_author_by_identifier(author_identifier)
+        if not author_id:
+            raise AuthorNotFoundError(f"No author was found for identifier {author_identifier}.")
+        return author_id
+
+    def fetch_and_store_work_or_raise(self, work_identifier: str) -> str:
+        """Same as fetch_and_store_work_by_identifier, but raises WorkNotFoundError
+        instead of returning None when no work is found.
+        """
+        work_id = self.fetch_and_store_work_by_identifier(work_identifier)
+        if not work_id:
+            raise WorkNotFoundError(f"No work was found for identifier {work_identifier}.")
+        return work_id
+
+    def ingest_authors_batch(
+        self,
+        identifiers: list[str],
+        ingest_author: Callable[[str], str | None],
+        empty_identifier_message: str,
+        not_found_message: str,
+    ) -> OpenAlexAuthorsBatchIngestResponse:
+        """Ingests a batch of author identifiers (ORCIDs or OpenAlex identifiers),
+        collecting per-item successes and failures instead of failing the whole batch.
+        """
+        results: list[OpenAlexAuthorsBatchIngestItem] = []
+        ingested = 0
+        failed = 0
+
+        for raw_identifier in identifiers:
+            identifier = raw_identifier.strip()
+            if not identifier:
+                failed += 1
+                results.append(
+                    OpenAlexAuthorsBatchIngestItem(
+                        identifier=raw_identifier,
+                        status="failed",
+                        error=empty_identifier_message,
+                    )
+                )
+                continue
+
+            try:
+                author_id = ingest_author(identifier)
+            except (ValueError, OpenAlexUpstreamError) as exc:
+                failed += 1
+                results.append(
+                    OpenAlexAuthorsBatchIngestItem(
+                        identifier=identifier,
+                        status="failed",
+                        error=str(exc),
+                    )
+                )
+                continue
+
+            if not author_id:
+                failed += 1
+                results.append(
+                    OpenAlexAuthorsBatchIngestItem(
+                        identifier=identifier,
+                        status="failed",
+                        error=not_found_message,
+                    )
+                )
+                continue
+
+            ingested += 1
+            results.append(
+                OpenAlexAuthorsBatchIngestItem(
+                    identifier=identifier,
+                    status="ingested",
+                    author_id=author_id,
+                )
+            )
+
+        return OpenAlexAuthorsBatchIngestResponse(
+            requested=len(identifiers),
+            ingested=ingested,
+            failed=failed,
+            results=results,
+        )

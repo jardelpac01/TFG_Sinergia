@@ -39,8 +39,11 @@ class AuthorRepository:
         )
         return self.db.exec(statement).all()
 
+    def _shared_work_ids(self, author_id: str):
+        return select(AuthorWork.work_id).where(AuthorWork.author_id == author_id)
+
     def get_coauthors(self, author_id: str):
-        work_ids_subquery = select(AuthorWork.work_id).where(AuthorWork.author_id == author_id)
+        work_ids_subquery = self._shared_work_ids(author_id)
         statement = (
             select(
                 Author.id,
@@ -76,7 +79,7 @@ class AuthorRepository:
         return self.db.exec(statement).all()
 
     def get_coauthors_with_location(self, author_id: str):
-        work_ids_subquery = select(AuthorWork.work_id).where(AuthorWork.author_id == author_id)
+        work_ids_subquery = self._shared_work_ids(author_id)
         statement = (
             select(
                 Author,
@@ -92,7 +95,7 @@ class AuthorRepository:
         return self.db.exec(statement).all()
 
     def get_country_collaborations(self, author_id: str):
-        work_ids_subquery = select(AuthorWork.work_id).where(AuthorWork.author_id == author_id)
+        work_ids_subquery = self._shared_work_ids(author_id)
         statement = (
             select(
                 Institution.country_code,
