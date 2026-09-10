@@ -12,6 +12,9 @@ from app.schemas.openalex_ingestion import (
     OpenAlexAuthorsBatchIngestRequest,
     OpenAlexAuthorsBatchIngestResponse,
     OpenAlexWorkIngestionRequest,
+    PrismaDepartmentIngestItem,
+    PrismaDepartmentIngestionRequest,
+    PrismaDepartmentIngestionResponse,
 )
 from app.services.openalex_data import (
     AuthorNotFoundError,
@@ -105,6 +108,36 @@ def ingest_authors_by_identifier_batch(
         ingest_author=service.fetch_and_store_author_by_identifier,
         empty_identifier_message="Identifier value is empty.",
         not_found_message="No author was found in OpenAlex for this identifier.",
+    )
+
+
+@router.post(
+    "/author-ingestions/batch-prisma-department",
+    response_model=PrismaDepartmentIngestionResponse,
+)
+def ingest_authors_by_prisma_department(
+    payload: PrismaDepartmentIngestionRequest, db: Session = Depends(get_db)
+):
+    service = OpenAlexService(db)
+    try:
+        raw_results = service.ingest_authors_by_prisma_department(payload.department_code)
+    except OpenAlexUpstreamError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    results = [PrismaDepartmentIngestItem(**item) for item in raw_results]
+    created = sum(1 for item in results if item.status == "created")
+    updated = sum(1 for item in results if item.status == "updated")
+    skipped = sum(1 for item in results if item.status == "skipped")
+    failed = sum(1 for item in results if item.status == "failed")
+
+    return PrismaDepartmentIngestionResponse(
+        department_code=payload.department_code,
+        requested=len(results),
+        created=created,
+        updated=updated,
+        skipped=skipped,
+        failed=failed,
+        results=results,
     )
 
 

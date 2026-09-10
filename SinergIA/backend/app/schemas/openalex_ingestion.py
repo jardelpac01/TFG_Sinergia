@@ -85,3 +85,35 @@ class OpenAlexAuthorSearchAndIngestResponse(SQLModel):
     selected_by: Optional[str] = None
     author_id: Optional[str] = None
     candidates: List[OpenAlexAuthorSearchItem] = Field(default_factory=list)
+
+
+class PrismaDepartmentIngestionRequest(SQLModel):
+    department_code: str = Field(
+        min_length=1,
+        description="Prisma department code (e.g. 'I0A3').",
+        schema_extra={"example": "I0A3"},
+    )
+
+
+class PrismaDepartmentIngestItem(SQLModel):
+    prisma_id: int
+    display_name: Optional[str] = None
+    status: str = Field(
+        description=(
+            "One of: 'created' (new author ingested), 'updated' (existing "
+            "author refreshed from OpenAlex), 'skipped' (no ORCID/OpenAlex "
+            "ID in Prisma), 'failed'."
+        )
+    )
+    author_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+class PrismaDepartmentIngestionResponse(SQLModel):
+    department_code: str
+    requested: int
+    created: int
+    updated: int
+    skipped: int
+    failed: int
+    results: List[PrismaDepartmentIngestItem] = Field(default_factory=list)

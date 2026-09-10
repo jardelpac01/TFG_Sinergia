@@ -2,14 +2,28 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
 from sqlalchemy.orm import Session
 
 from app.repositories.ingestion_openalex_data import IngestionRepository
+from app.repositories.prisma_author import PrismaAuthorRepository
+from app.schemas.openalex_ingestion import (
+    OpenAlexAuthorsBatchIngestItem,
+    OpenAlexAuthorsBatchIngestResponse,
+)
 from app.schemas.openalex_ingestion import (
     OpenAlexAuthorsBatchIngestItem,
     OpenAlexAuthorsBatchIngestResponse,
 )
 from app.services.author_identity import AuthorIdentityService
+from app.services.http_client import fetch_with_retries
+from app.services.prisma_scraper import (
+    PrismaScraperError,
+    fetch_researcher_profile,
+    list_researcher_ids_by_department,
+)
 from app.services.http_client import fetch_with_retries
 
 
@@ -42,21 +56,51 @@ class OpenAlexService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = IngestionRepository(db)
+        self.prisma_repo = PrismaAuthorRepository(db)
         self.author_identity = AuthorIdentityService()
 
     def upsert_author(self, author_data: dict) -> str | None:
         author_data = self.author_identity.prepare_author_data(author_data)
         orcid = author_data["orcid"]
-        existing_author = self.repo.get_author_by_orcid(orcid) if orcid else None
-        if existing_author is None:
-            existing_author = self.author_identity.find_matching_author(
+        incoming_author_id = author_data.get("id")
+
+        prisma_match = (
+            self.prisma_repo.get_by_openalex_id(incoming_author_id)
+            if incoming_author_id
+            else None
+        )
+        if prisma_match is None:
+            prisma_match = self.author_identity.match_via_prisma_researchers_by_name(
+                display_name=author_data["display_name"],
+                display_name_alternatives=author_data.get("display_name_alternatives"),
+                prisma_authors=self.prisma_repo.get_all_with_openalex_id(),
+            )
+
+        if prisma_match is not None:
+            author_data["id"] = prisma_match.openalex_author_id
+            openalex_name = author_data.get("display_name")
+            author_data["display_name"] = prisma_match.display_name
+            if openalex_name and openalex_name != prisma_match.display_name:
+                author_data["display_name_alternatives"] = list(
+                    dict.fromkeys(
+                        [*(author_data.get("display_name_alternatives") or []), openalex_name]
+                    )
+                )
+            existing_author = self.repo.get_author(prisma_match.openalex_author_id)
+        else:
+            existing_author = self.repo.get_author_by_orcid(orcid) if orcid else None
+            if existing_author is None and incoming_author_id:
+                existing_author = self.repo.get_author(incoming_author_id)
+
+        if existing_author is None and prisma_match is None:
+            match = self.author_identity.find_matching_author(
                 display_name=author_data["display_name"],
                 institution_id=author_data.get("last_known_institution_id"),
                 candidates=self.repo.get_authors_with_display_name(),
                 orcid=orcid,
             )
-        if existing_author is None and author_data.get("id"):
-            existing_author = self.repo.get_author(author_data["id"])
+            existing_author = match.author
+
         return self.repo.upsert_author(author_data, existing_author)
 
     def clean_id(self, url: str) -> str | None:
@@ -404,8 +448,9 @@ class OpenAlexService:
 
     def fetch_and_store_author_by_identifier(self, author_identifier: str) -> str | None:
         """Fetches an author by ORCID, OpenAlex ID or OpenAlex URL."""
-        if ORCID_REGEX.match(author_identifier):
-            return self.fetch_and_store_author(author_identifier)
+        canonical_orcid = self.author_identity.canonicalize_orcid(author_identifier)
+        if canonical_orcid:
+            return self.fetch_and_store_author(canonical_orcid.rsplit("/", 1)[-1])
 
         author_id = self.clean_id(author_identifier)
         if not author_id:
@@ -563,6 +608,94 @@ class OpenAlexService:
         if not work_id:
             raise WorkNotFoundError(f"No work was found for identifier {work_identifier}.")
         return work_id
+
+    def ingest_authors_by_prisma_department(
+        self,
+        department_code: str,
+    ) -> list[dict]:
+        """Ingests authors from Prisma for a given department, using the department code."""
+        try:
+            prisma_ids = list_researcher_ids_by_department(department_code)
+        except PrismaScraperError as exc:
+            raise OpenAlexUpstreamError(str(exc)) from exc
+
+        profiles: list[dict] = []
+        results_by_prisma_id: dict[int, dict] = {}
+
+        # Load every Prisma identity first. Works from early researchers may contain
+        # department colleagues as co-authors, and those co-authors must already be
+        # known here so their canonical Prisma ID is used from the start.
+        for prisma_id in prisma_ids:
+            try:
+                profile = fetch_researcher_profile(prisma_id)
+            except PrismaScraperError as exc:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "status": "failed",
+                    "error": str(exc),
+                }
+                continue
+
+            if profile is None:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "status": "failed",
+                    "error": "Could not parse Prisma profile.",
+                }
+                continue
+
+            self.prisma_repo.upsert(profile)
+            profiles.append(profile)
+
+        for profile in profiles:
+            prisma_id = profile["prisma_id"]
+            orcid = self.author_identity.canonicalize_orcid(profile.get("orcid"))
+            identifier = profile.get("openalex_author_id") or orcid
+            if not identifier:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "display_name": profile["display_name"],
+                    "status": "skipped",
+                    "error": "No ORCID or OpenAlex ID linked in Prisma.",
+                }
+                continue
+
+            existing_author = None
+            if profile.get("openalex_author_id"):
+                existing_author = self.repo.get_author(profile["openalex_author_id"])
+            if existing_author is None and orcid:
+                existing_author = self.repo.get_author_by_orcid(orcid)
+
+            is_new_author = existing_author is None
+
+            try:
+                author_id = self.fetch_and_store_author_by_identifier(identifier)
+            except OpenAlexUpstreamError as exc:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "display_name": profile["display_name"],
+                    "status": "failed",
+                    "error": str(exc),
+                }
+                continue
+
+            if not author_id:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "display_name": profile["display_name"],
+                    "status": "failed",
+                    "error": "No author was found in OpenAlex for this identifier.",
+                }
+                continue
+
+            results_by_prisma_id[prisma_id] = {
+                "prisma_id": prisma_id,
+                "display_name": profile["display_name"],
+                "status": "created" if is_new_author else "updated",
+                "author_id": author_id,
+            }
+
+        return [results_by_prisma_id[prisma_id] for prisma_id in prisma_ids]
 
     def ingest_authors_batch(
         self,

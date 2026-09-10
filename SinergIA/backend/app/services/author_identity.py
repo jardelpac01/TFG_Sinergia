@@ -10,6 +10,8 @@ MATCH_THRESHOLD = 80
 # to accept the merge (weaker evidence, needs corroboration).
 WEAK_MATCH_THRESHOLD = 40
 
+ORCID_BARE_REGEX = re.compile(r"(\d{4}-\d{4}-\d{4}-\d{3}[\dX])", re.IGNORECASE)
+
 
 class AuthorMatchResult:
     def __init__(self, author: Optional[Author], score: float, breakdown: dict):
@@ -25,6 +27,12 @@ class AuthorIdentityService:
         value = display_name.strip()
         return value or None
 
+    def canonicalize_orcid(self, orcid: str | None) -> str | None:
+        if not orcid:
+            return None
+        match = ORCID_BARE_REGEX.search(orcid.strip())
+        return f"https://orcid.org/{match.group(1).upper()}" if match else None
+
     def prepare_author_data(self, author_data: dict) -> dict:
         raw_data = author_data.get("raw_data") or {}
         alternatives = author_data.get("display_name_alternatives")
@@ -38,7 +46,7 @@ class AuthorIdentityService:
         return {
             **author_data,
             "display_name": self.canonicalize_display_name(author_data.get("display_name")) or "Unknown",
-            "orcid": (author_data.get("orcid") or "").strip() or None,
+            "orcid": self.canonicalize_orcid(author_data.get("orcid")),
             "display_name_alternatives": normalized_alternatives,
         }
 
