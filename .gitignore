@@ -152,3 +152,10 @@ vite.config.ts.timestamp-*
 
 # JetBrains IDE files
 .idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
