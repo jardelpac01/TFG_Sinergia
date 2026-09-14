@@ -15,7 +15,7 @@ export function Layout() {
           type="button"
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Expandir menú' : 'Colapsar menú'}
-          className="absolute -right-3.5 top-8 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900 hover:shadow"
+          className="absolute -right-3.5 top-1/2 z-20 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900 hover:shadow"
         >
           <svg
             className={`h-4 w-4 transition-transform duration-300 ${
@@ -30,7 +30,7 @@ export function Layout() {
           </svg>
         </button>
 
-        <div className="flex h-24 items-center justify-center px-4">
+        <div className={`flex h-24 items-center justify-center ${collapsed ? 'px-2' : 'px-4'}`}>
           <NavLink
             to="/"
             className={`flex items-center overflow-hidden ${
@@ -59,7 +59,7 @@ export function Layout() {
                 collapsed ? 'justify-center' : ''
               } ${
                 isActive
-                  ? 'bg-brand-50 text-brand-700 shadow-sm'
+                  ? 'bg-brand-50 text-brand-700 font-semibold shadow-sm'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`
             }
@@ -88,7 +88,7 @@ export function Layout() {
                 collapsed ? 'justify-center' : ''
               } ${
                 isActive
-                  ? 'bg-brand-50 text-brand-700 shadow-sm'
+                  ? 'bg-brand-50 text-brand-700 font-semibold shadow-sm'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`
             }
