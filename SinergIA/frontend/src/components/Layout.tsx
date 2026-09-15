@@ -43,7 +43,7 @@ export function Layout() {
               className="h-16 w-16 shrink-0 rounded-xl object-contain"
             />
             {!collapsed && (
-              <span className="whitespace-nowrap font-display text-2xl font-bold tracking-tight text-slate-900">
+              <span className="whitespace-nowrap font-display text-2xl font-light text-slate-900">
                 SinergIA
               </span>
             )}

@@ -9,7 +9,7 @@ import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { downloadCsv } from '../lib/csv'
 import { paginate } from '../lib/pagination'
 
-const PAGE_SIZE = 10
+const PAGE_SIZE = 9
 
 export function AuthorsPage() {
   const [search, setSearch] = useState('')
@@ -42,6 +42,7 @@ export function AuthorsPage() {
       <PageHeader
         title="Autores"
         subtitle="Busca investigadores por nombre u ORCID"
+        titleClassName="text-4xl font-bold tracking-tight text-slate-900"
         actions={
           <button
             type="button"
@@ -54,7 +55,7 @@ export function AuthorsPage() {
         }
       />
 
-      <div className="card mb-4 p-4">
+      <div className="card mb-6 p-4">
         <label className="label" htmlFor="author-search">
           Búsqueda
         </label>
@@ -67,56 +68,65 @@ export function AuthorsPage() {
         />
       </div>
 
-      <div className="card overflow-hidden">
-        {isPending ? (
+      {isPending ? (
+        <div className="card">
           <LoadingState />
-        ) : isError ? (
+        </div>
+      ) : isError ? (
+        <div className="card">
           <ErrorState title="No se pudieron cargar los autores" description={error.message} />
-        ) : authors.length === 0 ? (
+        </div>
+      ) : authors.length === 0 ? (
+        <div className="card">
           <EmptyState
             title="Sin resultados"
             description="Prueba con otro nombre o revisa que la base de datos tenga autores cargados."
           />
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Nombre</th>
-                    <th className="px-4 py-3 font-medium">ORCID</th>
-                    <th className="px-4 py-3 font-medium" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {pageItems.map((author) => (
-                    <tr key={author.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium text-slate-800">
-                        {author.display_name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500">{author.orcid ?? '—'}</td>
-                      <td className="px-4 py-3 text-right">
-                        <Link
-                          to={`/authors/${encodeURIComponent(author.id)}`}
-                          className="text-sm font-medium text-brand-600 hover:text-brand-700"
-                        >
-                          Ver ficha
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {pageItems.map((author) => (
+              <Link
+                key={author.id}
+                to={`/authors/${encodeURIComponent(author.id)}`}
+                className="card flex flex-col justify-between p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <div>
+                  <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-brand-50 text-brand-700">
+                    <svg
+                      className="h-6 w-6"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
+                    </svg>
+                  </div>
+                  <h2 className="font-display text-lg font-semibold text-slate-900">
+                    {author.display_name}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">{author.orcid ?? 'Sin ORCID'}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          <div className="mt-6">
             <Pagination
               page={page}
               pageSize={PAGE_SIZE}
               totalItems={authors.length}
               onPageChange={setPage}
             />
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
