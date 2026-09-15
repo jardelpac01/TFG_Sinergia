@@ -12,8 +12,8 @@ class AuthorService:
         self.db = db
         self.repository = AuthorRepository(db)
 
-    def list_authors(self, q: Optional[str] = None, limit: int = 50) -> List[Author]:
-        return self.repository.list_authors(q=q, limit=limit)
+    def list_authors(self, q: Optional[str] = None, limit: int = 50, offset: int = 0):
+        return self.repository.list_authors(q=q, limit=limit, offset=offset)
 
     def get_author(self, author_id: str) -> Optional[Author]:
         return self.repository.get_author(author_id)

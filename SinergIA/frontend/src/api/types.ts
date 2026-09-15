@@ -4,6 +4,13 @@ export interface AuthorLite {
   orcid: string | null
 }
 
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export interface Institution {
   id: string
   name: string

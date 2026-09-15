@@ -62,3 +62,9 @@ class AuthorCollaboratorsResponse(SQLModel):
 
 class AuthorReadWithWorks(AuthorReadWithRelationships):
     works: List["WorkReadLite"] = []
+
+class AuthorListResponse(SQLModel):
+    items: List[AuthorReadLite]
+    total: int
+    page: int
+    page_size: int

@@ -11,15 +11,20 @@ class AuthorRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def list_authors(self, q: Optional[str] = None, limit: int = 50):
+    def list_authors(self, q: Optional[str] = None, limit: int = 50, offset: int = 0):
         statement = select(Author)
+        count_statement = select(func.count()).select_from(Author)
         if q:
             search = f"%{q.lower()}%"
-            statement = statement.where(
-                (Author.display_name.ilike(search)) | (Author.orcid.ilike(search))
-            )
-        statement = statement.order_by(Author.display_name.asc()).limit(limit)
-        return self.db.exec(statement).all()
+            condition = (
+                func.unaccent(func.lower(Author.display_name)).ilike(func.unaccent(search))
+            ) | (Author.orcid.ilike(search))
+            statement = statement.where(condition)
+            count_statement = count_statement.where(condition)
+        total = self.db.exec(count_statement).one()
+        statement = statement.order_by(Author.display_name.asc()).offset(offset).limit(limit)
+        items = self.db.exec(statement).all()
+        return items, total
 
     def get_author(self, author_id: str):
         statement = (
@@ -67,13 +72,18 @@ class AuthorRepository:
                 FROM jsonb_array_elements_text(
                     COALESCE(authors.display_name_alternatives, '[]'::jsonb)
                 ) AS alt(value)
-                WHERE alt.value ILIKE :search
+                WHERE unaccent(lower(alt.value)) ILIKE unaccent(:search)
             )
             """
         ).bindparams(search=search)
         statement = (
             select(Author)
-            .where(or_(Author.display_name.ilike(search), alternatives_match))
+            .where(
+                or_(
+                    func.unaccent(func.lower(Author.display_name)).ilike(func.unaccent(search)),
+                    alternatives_match,
+                )
+            )
             .order_by(Author.display_name.asc())
         )
         return self.db.exec(statement).all()

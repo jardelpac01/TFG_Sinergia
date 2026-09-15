@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from app.database import get_db
-from app.schemas.author import AuthorCollaboratorsResponse, AuthorNetwork, AuthorReadLite
+from app.schemas.author import AuthorCollaboratorsResponse, AuthorListResponse, AuthorNetwork, AuthorReadLite
 from app.schemas.work import WorkReadWithRelationships
 from app.services.author_service import AuthorService
 
@@ -12,14 +12,17 @@ from app.services.author_service import AuthorService
 router = APIRouter(prefix="/authors", tags=["authors"])
 
 
-@router.get("", response_model=List[AuthorReadLite])
+@router.get("", response_model=AuthorListResponse)
 def list_authors(
     q: Optional[str] = Query(default=None, description="Search authors by name or ORCID"),
-    limit: int = Query(default=50, ge=1, le=200),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=9, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
     service = AuthorService(db)
-    return service.list_authors(q=q, limit=limit)
+    offset = (page - 1) * page_size
+    items, total = service.list_authors(q=q, limit=page_size, offset=offset)
+    return AuthorListResponse(items=items, total=total, page=page, page_size=page_size)
 
 @router.get("/collaborators/by-name", response_model=AuthorCollaboratorsResponse)
 def get_collaborators_by_name(

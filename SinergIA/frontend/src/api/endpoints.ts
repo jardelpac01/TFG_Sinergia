@@ -4,6 +4,7 @@ import type {
   AuthorLite,
   AuthorNetwork,
   Institution,
+  PaginatedResponse,
   Topic,
   WorkDetail,
   WorkLite,
@@ -14,9 +15,15 @@ export interface ListParams {
   limit?: number
 }
 
+export interface PaginatedListParams {
+  q?: string
+  page?: number
+  page_size?: number
+}
+
 export const authorsApi = {
-  list: (params: ListParams, signal?: AbortSignal) =>
-    apiGet<AuthorLite[]>(`/authors${buildQuery({ ...params })}`, signal),
+  list: (params: PaginatedListParams, signal?: AbortSignal) =>
+    apiGet<PaginatedResponse<AuthorLite>>(`/authors${buildQuery({ ...params })}`, signal),
   get: (id: string, signal?: AbortSignal) => apiGet<AuthorLite>(`/authors/${id}`, signal),
   works: (id: string, signal?: AbortSignal) => apiGet<WorkDetail[]>(`/authors/${id}/works`, signal),
   network: (id: string, signal?: AbortSignal) =>

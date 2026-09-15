@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { authorsApi } from '../api/endpoints'
 import { PageHeader } from '../components/PageHeader'
@@ -7,7 +7,6 @@ import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { downloadCsv } from '../lib/csv'
-import { paginate } from '../lib/pagination'
 
 const PAGE_SIZE = 9
 
@@ -17,12 +16,13 @@ export function AuthorsPage() {
   const debouncedSearch = useDebouncedValue(search)
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['authors', debouncedSearch],
-    queryFn: ({ signal }) => authorsApi.list({ q: debouncedSearch, limit: 200 }, signal),
+    queryKey: ['authors', debouncedSearch, page],
+    queryFn: ({ signal }) =>
+      authorsApi.list({ q: debouncedSearch, page, page_size: PAGE_SIZE }, signal),
   })
 
-  const authors = useMemo(() => data ?? [], [data])
-  const pageItems = useMemo(() => paginate(authors, page, PAGE_SIZE), [authors, page])
+  const authors = data?.items ?? []
+  const total = data?.total ?? 0
 
   function handleSearchChange(value: string) {
     setSearch(value)
@@ -86,7 +86,7 @@ export function AuthorsPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {pageItems.map((author) => (
+            {authors.map((author) => (
               <Link
                 key={author.id}
                 to={`/authors/${encodeURIComponent(author.id)}`}
@@ -121,7 +121,7 @@ export function AuthorsPage() {
             <Pagination
               page={page}
               pageSize={PAGE_SIZE}
-              totalItems={authors.length}
+              totalItems={total}
               onPageChange={setPage}
             />
           </div>
