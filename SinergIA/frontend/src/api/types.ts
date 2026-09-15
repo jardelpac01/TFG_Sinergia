@@ -70,10 +70,25 @@ export interface CountryConnection {
   works_count: number
 }
 
+export interface CityConnection {
+  city: string | null
+  country_code: string | null
+  geo_lat: number
+  geo_lon: number
+  authors_count: number
+}
+
+export interface WorksByYear {
+  year: number
+  works_count: number
+}
+
 export interface AuthorNetwork {
   author: AuthorLite
   coauthors: CoAuthorConnection[]
   country_collaborations: CountryConnection[]
+  city_collaborations: CityConnection[]
+  works_by_year: WorksByYear[]
 }
 
 export interface CoAuthorLocation {

@@ -141,16 +141,34 @@ class OpenAlexService:
         institution_id = self.clean_id(institution_data.get("id"))
         if not institution_id:
             return None
+
         geo = institution_data.get("geo") or {}
+        geo_lat = geo.get("latitude")
+        geo_lon = geo.get("longitude")
+        city = geo.get("city")
+
+        if geo_lat is None or geo_lon is None:
+            existing = self.repo.get_institution(institution_id)
+            already_has_geo = existing is not None and existing.geo_lat is not None and existing.geo_lon is not None
+            if not already_has_geo:
+                full_institution = self._fetch_json(
+                    f"https://api.openalex.org/institutions/{institution_id}"
+                )
+                if full_institution:
+                    full_geo = full_institution.get("geo") or {}
+                    geo_lat = full_geo.get("latitude")
+                    geo_lon = full_geo.get("longitude")
+                    city = full_geo.get("city")
+
         self.repo.upsert_institution({
             "id": institution_id,
             "display_name": institution_data.get("display_name"),
             "country_code": institution_data.get("country_code"),
             "ror": institution_data.get("ror"),
             "type": institution_data.get("type"),
-            "geo_lat": geo.get("latitude"),
-            "geo_lon": geo.get("longitude"),
-            "city": geo.get("city"),
+            "geo_lat": geo_lat,
+            "geo_lon": geo_lon,
+            "city": city,
         })
         return institution_id
 

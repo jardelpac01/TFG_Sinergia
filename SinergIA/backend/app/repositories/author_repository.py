@@ -118,3 +118,34 @@ class AuthorRepository:
             .order_by(desc("works_count"))
         )
         return self.db.exec(statement).all()
+
+    def get_city_collaborations(self, author_id: str):
+        work_ids_subquery = self._shared_work_ids(author_id)
+        statement = (
+            select(
+                Institution.city,
+                Institution.country_code,
+                Institution.geo_lat,
+                Institution.geo_lon,
+                func.count(func.distinct(AuthorWorkAffiliation.author_id)).label("authors_count"),
+            )
+            .join(Institution, Institution.id == AuthorWorkAffiliation.institution_id)
+            .where(AuthorWorkAffiliation.work_id.in_(work_ids_subquery))
+            .where(AuthorWorkAffiliation.author_id != author_id)
+            .where(Institution.geo_lat.is_not(None))
+            .where(Institution.geo_lon.is_not(None))
+            .group_by(Institution.city, Institution.country_code, Institution.geo_lat, Institution.geo_lon)
+            .order_by(desc("authors_count"))
+        )
+        return self.db.exec(statement).all()
+
+    def get_works_by_year(self, author_id: str):
+        statement = (
+            select(Work.publication_year, func.count(func.distinct(Work.id)).label("works_count"))
+            .join(AuthorWork, Work.id == AuthorWork.work_id)
+            .where(AuthorWork.author_id == author_id)
+            .where(Work.publication_year.is_not(None))
+            .group_by(Work.publication_year)
+            .order_by(Work.publication_year.asc())
+        )
+        return self.db.exec(statement).all()

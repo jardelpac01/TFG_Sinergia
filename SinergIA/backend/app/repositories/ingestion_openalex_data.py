@@ -25,6 +25,9 @@ class IngestionRepository:
     def get_author_by_orcid(self, orcid: str):
         return self.db.exec(select(Author).where(Author.orcid == orcid)).first()
 
+    def get_institution(self, institution_id: str):
+        return self.db.get(Institution, institution_id)
+
     def get_authors_with_display_name(self):
         return self.db.exec(select(Author).where(Author.display_name.is_not(None))).all()
 

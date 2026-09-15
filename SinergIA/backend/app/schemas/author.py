@@ -42,10 +42,23 @@ class CountryConnection(SQLModel):
     country_code: Optional[str] = None
     works_count: int
 
+class CityConnection(SQLModel):
+    city: Optional[str] = None
+    country_code: Optional[str] = None
+    geo_lat: float
+    geo_lon: float
+    authors_count: int
+
+class WorksByYear(SQLModel):
+    year: int
+    works_count: int
+
 class AuthorNetwork(SQLModel):
     author: AuthorReadLite
     coauthors: List[CoAuthorConnection] = []
     country_collaborations: List[CountryConnection] = []
+    city_collaborations: List[CityConnection] = []
+    works_by_year: List[WorksByYear] = []
 
 class CoAuthorLocation(SQLModel):
     id: str

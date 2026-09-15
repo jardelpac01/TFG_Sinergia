@@ -4,7 +4,15 @@ from sqlmodel import Session
 
 from app.models import Author, Work
 from app.repositories.author_repository import AuthorRepository
-from app.schemas.author import AuthorReadLite, AuthorNetwork, CoAuthorConnection, CoAuthorLocation, CountryConnection
+from app.schemas.author import (
+    AuthorReadLite,
+    AuthorNetwork,
+    CityConnection,
+    CoAuthorConnection,
+    CoAuthorLocation,
+    CountryConnection,
+    WorksByYear,
+)
 
 
 class AuthorService:
@@ -46,6 +54,22 @@ class AuthorService:
             for country in self.repository.get_country_collaborations(author_id)
         ]
 
+        cities = [
+            CityConnection(
+                city=city.city,
+                country_code=city.country_code,
+                geo_lat=float(city.geo_lat),
+                geo_lon=float(city.geo_lon),
+                authors_count=int(city.authors_count),
+            )
+            for city in self.repository.get_city_collaborations(author_id)
+        ]
+
+        works_by_year = [
+            WorksByYear(year=int(row.publication_year), works_count=int(row.works_count))
+            for row in self.repository.get_works_by_year(author_id)
+        ]
+
         return AuthorNetwork(
             author=AuthorReadLite(
                 id=author.id,
@@ -54,6 +78,8 @@ class AuthorService:
             ),
             coauthors=coauthors,
             country_collaborations=countries,
+            city_collaborations=cities,
+            works_by_year=works_by_year,
         )
 
     def get_collaborators_with_location(self, author_id: str) -> List[CoAuthorLocation]:

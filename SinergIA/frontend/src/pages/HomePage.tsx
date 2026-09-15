@@ -11,11 +11,11 @@ export function HomePage() {
 
   const { data } = useQuery({
     queryKey: ['home-authors', debouncedSearch],
-    queryFn: ({ signal }) => authorsApi.list({ q: debouncedSearch, limit: 6 }, signal),
+    queryFn: ({ signal }) => authorsApi.list({ q: debouncedSearch, page_size: 6 }, signal),
     enabled: debouncedSearch.trim().length >= 2,
   })
 
-  const suggestions = data ?? []
+  const suggestions = data?.items ?? []
 
   return (
     <div className="flex min-h-[75vh] flex-col items-center justify-center">
