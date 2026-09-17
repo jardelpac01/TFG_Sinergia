@@ -52,6 +52,36 @@ export function Layout() {
 
         <nav className="flex-1 space-y-2 px-3 py-4">
           <NavLink
+            to="/"
+            end
+            title="Inicio"
+            className={({ isActive }) =>
+              `group flex items-center gap-3.5 rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                collapsed ? 'justify-center' : ''
+              } ${
+                isActive
+                  ? 'bg-brand-50 text-brand-700 font-semibold shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`
+            }
+          >
+            <svg
+              className="h-6 w-6 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75V19.5a1.5 1.5 0 001.5 1.5h3.75v-6a1.5 1.5 0 011.5-1.5h1.5a1.5 1.5 0 011.5 1.5v6H18a1.5 1.5 0 001.5-1.5V9.75"
+              />
+            </svg>
+            {!collapsed && <span className="whitespace-nowrap">Inicio</span>}
+          </NavLink>
+
+          <NavLink
             to="/authors"
             title="Autores"
             className={({ isActive }) =>

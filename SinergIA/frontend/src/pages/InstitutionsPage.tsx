@@ -44,7 +44,6 @@ export function InstitutionsPage() {
     <div>
       <PageHeader
         title="Instituciones"
-        subtitle="Busca por nombre o código de país"
         titleClassName="text-4xl font-bold tracking-tight text-slate-900"
         actions={
           <button
@@ -62,13 +61,28 @@ export function InstitutionsPage() {
         <label className="label" htmlFor="institution-search">
           Búsqueda
         </label>
-        <input
-          id="institution-search"
-          className="input"
-          placeholder="Ej. Universidad, ES"
-          value={search}
-          onChange={(event) => handleSearchChange(event.target.value)}
-        />
+        <div className="relative">
+          <svg
+            className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+            />
+          </svg>
+          <input
+            id="institution-search"
+            className="input pl-10"
+            placeholder="Ej. Universidad, ES"
+            value={search}
+            onChange={(event) => handleSearchChange(event.target.value)}
+          />
+        </div>
       </div>
 
       {isPending ? (
