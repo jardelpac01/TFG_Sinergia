@@ -10,8 +10,8 @@ class InstitutionService:
     def __init__(self, db: Session):
         self.repository = InstitutionRepository(db)
 
-    def list_institutions(self, q: Optional[str] = None, limit: int = 50) -> List[Institution]:
-        return self.repository.list_institutions(q=q, limit=limit)
+    def list_institutions(self, q: Optional[str] = None, limit: int = 50, offset: int = 0):
+        return self.repository.list_institutions(q=q, limit=limit, offset=offset)
 
     def get_institution(self, institution_id: str) -> Optional[Institution]:
         return self.repository.get_institution(institution_id)

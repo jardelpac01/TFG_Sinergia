@@ -10,16 +10,20 @@ class InstitutionRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def list_institutions(self, q: Optional[str] = None, limit: int = 50):
+    def list_institutions(self, q: Optional[str] = None, limit: int = 50, offset: int = 0):
         statement = select(Institution)
+        count_statement = select(func.count()).select_from(Institution)
         if q:
             search = f"%{q.lower()}%"
-            statement = statement.where(
-                (func.unaccent(func.lower(Institution.name)).ilike(func.unaccent(search)))
-                | (Institution.country_code.ilike(search))
-            )
-        statement = statement.order_by(Institution.name.asc()).limit(limit)
-        return self.db.exec(statement).all()
+            condition = (
+                func.unaccent(func.lower(Institution.name)).ilike(func.unaccent(search))
+            ) | (Institution.country_code.ilike(search))
+            statement = statement.where(condition)
+            count_statement = count_statement.where(condition)
+        total = self.db.exec(count_statement).one()
+        statement = statement.order_by(Institution.name.asc()).offset(offset).limit(limit)
+        items = self.db.exec(statement).all()
+        return items, total
 
     def get_institution(self, institution_id: str) -> Optional[Institution]:
         return self.db.get(Institution, institution_id)

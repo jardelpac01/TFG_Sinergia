@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 
 class InstitutionBase(SQLModel):
@@ -17,3 +17,9 @@ class InstitutionCreate(InstitutionBase):
 
 class InstitutionRead(InstitutionBase):
     updated_at: datetime
+
+class InstitutionListResponse(SQLModel):
+    items: List[InstitutionRead]
+    total: int
+    page: int
+    page_size: int

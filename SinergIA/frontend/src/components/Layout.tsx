@@ -108,6 +108,35 @@ export function Layout() {
             </svg>
             {!collapsed && <span className="whitespace-nowrap">Publicaciones</span>}
           </NavLink>
+
+          <NavLink
+            to="/institutions"
+            title="Instituciones"
+            className={({ isActive }) =>
+              `group flex items-center gap-3.5 rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
+                collapsed ? 'justify-center' : ''
+              } ${
+                isActive
+                  ? 'bg-brand-50 text-brand-700 font-semibold shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`
+            }
+          >
+            <svg
+              className="h-6 w-6 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m-1 4h1m4-4h1m-1 4h1M9 21v-4a3 3 0 016 0v4"
+              />
+            </svg>
+            {!collapsed && <span className="whitespace-nowrap">Instituciones</span>}
+          </NavLink>
         </nav>
       </aside>
 

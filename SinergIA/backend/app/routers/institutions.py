@@ -5,21 +5,24 @@ from sqlmodel import Session
 
 from app.database import get_db
 from app.schemas.author import AuthorReadLite
-from app.schemas.institution import InstitutionRead
+from app.schemas.institution import InstitutionListResponse, InstitutionRead
 from app.services.institution_service import InstitutionService
 
 
 router = APIRouter(prefix="/institutions", tags=["institutions"])
 
 
-@router.get("", response_model=List[InstitutionRead])
+@router.get("", response_model=InstitutionListResponse)
 def list_institutions(
     q: Optional[str] = Query(default=None, description="Search institution by name or country code"),
-    limit: int = Query(default=50, ge=1, le=200),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=18, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
     service = InstitutionService(db)
-    return service.list_institutions(q=q, limit=limit)
+    offset = (page - 1) * page_size
+    items, total = service.list_institutions(q=q, limit=page_size, offset=offset)
+    return InstitutionListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/{institution_id}", response_model=InstitutionRead)
