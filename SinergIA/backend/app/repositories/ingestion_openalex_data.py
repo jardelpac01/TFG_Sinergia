@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 from sqlmodel import select
 
@@ -180,6 +181,25 @@ class IngestionRepository:
             institution_id=institution_id,
             raw_affiliation=raw_affiliation,
         ))
+
+    def remove_author_work_relations_not_in(
+        self,
+        author_id: str,
+        work_ids: set[str],
+    ) -> None:
+        """Removes stale work and affiliation links after a complete OpenAlex sync."""
+        self.db.execute(
+            delete(AuthorWork).where(
+                AuthorWork.author_id == author_id,
+                AuthorWork.work_id.not_in(work_ids),
+            )
+        )
+        self.db.execute(
+            delete(AuthorWorkAffiliation).where(
+                AuthorWorkAffiliation.author_id == author_id,
+                AuthorWorkAffiliation.work_id.not_in(work_ids),
+            )
+        )
 
     def add_work_reference(self, work_id: str, referenced_work_id: str):
         """Creates a citation relation: work_id cites referenced_work_id."""

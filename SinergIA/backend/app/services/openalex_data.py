@@ -355,6 +355,8 @@ class OpenAlexService:
         and persists each work along with its topics, co-authors and affiliations.
         """
         cursor = "*"
+        fetched_work_ids: set[str] = set()
+        sync_completed = True
 
         while cursor:
             url = (
@@ -363,6 +365,7 @@ class OpenAlexService:
             )
             response = self._fetch_json(url)
             if not response:
+                sync_completed = False
                 break
 
             data = response
@@ -371,6 +374,7 @@ class OpenAlexService:
                 work_id = self.clean_id(work_data.get("id"))
                 if not work_id:
                     continue
+                fetched_work_ids.add(work_id)
 
                 primary_location = work_data.get("primary_location") or {}
                 source_id = self.store_source(primary_location.get("source"))
@@ -461,6 +465,11 @@ class OpenAlexService:
                             institution_id=institution_id,
                         )
 
+            if sync_completed:
+                self.repo.remove_author_work_relations_not_in(
+                    author_openalex_id,
+                    fetched_work_ids,
+                )
             self.repo.commit()
             cursor = data.get("meta", {}).get("next_cursor")
 
