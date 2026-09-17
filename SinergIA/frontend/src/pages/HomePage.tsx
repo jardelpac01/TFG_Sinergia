@@ -24,7 +24,7 @@ export function HomePage() {
           SinergIA
         </h1>
         <p className="mt-4 text-base text-slate-600">
-        Conectando el conocimiento: Busca autores, consulta sus publicaciones.
+        Conectando el conocimiento: Busca investigadores, consulta sus publicaciones.
         </p>
 
         <form
@@ -81,4 +81,3 @@ export function HomePage() {
     </div>
   )
 }
-

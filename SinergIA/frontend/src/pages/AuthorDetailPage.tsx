@@ -9,6 +9,7 @@ import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { downloadCsv } from '../lib/csv'
 import { paginate } from '../lib/pagination'
+import { groupWorksByTitle } from '../lib/worksGrouping'
 
 const PAGE_SIZE = 10
 
@@ -59,7 +60,8 @@ export function AuthorDetailPage() {
     })
   }, [worksQuery.data, fromMonth, toMonth])
 
-  const pageItems = useMemo(() => paginate(filteredWorks, page, PAGE_SIZE), [filteredWorks, page])
+  const groupedWorks = useMemo(() => groupWorksByTitle(filteredWorks), [filteredWorks])
+  const pageItems = useMemo(() => paginate(groupedWorks, page, PAGE_SIZE), [groupedWorks, page])
 
   const cityPoints = useMemo(() => {
     const cities = networkQuery.data?.city_collaborations ?? []
@@ -88,7 +90,7 @@ export function AuthorDetailPage() {
     const observer = new ResizeObserver(updateHeight)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [filteredWorks, worksByYear, cityPoints])
+  }, [groupedWorks, worksByYear, cityPoints])
 
   function updateFilter(setter: (value: string) => void, value: string) {
     setter(value)
@@ -98,13 +100,15 @@ export function AuthorDetailPage() {
   function handleExport() {
     const author = authorQuery.data
     const range = [fromMonth || 'inicio', toMonth || 'actual'].join('_')
-    downloadCsv(`trabajos-${author?.display_name ?? authorId}-${range}.csv`, filteredWorks, [
-      { header: 'ID', value: (work) => work.id },
+    downloadCsv(`trabajos-${author?.display_name ?? authorId}-${range}.csv`, groupedWorks, [
+      { header: 'IDs OpenAlex', value: (work) => work.workIds.join(' | ') },
       { header: 'Título', value: (work) => work.title },
       { header: 'Año', value: (work) => work.publication_year },
       { header: 'Fecha', value: (work) => work.publication_date },
       { header: 'Tipo', value: (work) => work.type },
-      { header: 'DOI', value: (work) => work.doi },
+      { header: 'DOI principal', value: (work) => work.doi },
+      { header: 'DOIs asociados', value: (work) => work.doiList.join(' | ') },
+      { header: 'Versiones/artefactos', value: (work) => work.versions.length },
       { header: 'Citas', value: (work) => work.cited_by_count },
       { header: 'Acceso abierto', value: (work) => (work.is_oa ? 'Sí' : 'No') },
       { header: 'Estado OA', value: (work) => work.oa_status },
@@ -114,10 +118,10 @@ export function AuthorDetailPage() {
     ])
   }
 
-  if (authorQuery.isPending) return <LoadingState label="Cargando autor…" />
+  if (authorQuery.isPending) return <LoadingState label="Cargando investigador…" />
   if (authorQuery.isError) {
     return (
-      <ErrorState title="No se pudo cargar el autor" description={authorQuery.error.message} />
+      <ErrorState title="No se pudo cargar el investigador" description={authorQuery.error.message} />
     )
   }
 
@@ -141,105 +145,19 @@ export function AuthorDetailPage() {
             type="button"
             className="btn-primary"
             onClick={handleExport}
-            disabled={filteredWorks.length === 0}
+            disabled={groupedWorks.length === 0}
           >
             Exportar
           </button>
         }
       />
 
-      <div className="card mb-6 grid gap-4 p-4 sm:grid-cols-2">
-        <div>
-          <label className="label" htmlFor="from-month">
-            Fecha desde
-          </label>
-          <input
-            id="from-month"
-            type="month"
-            className="input"
-            value={fromMonth}
-            onChange={(event) => updateFilter(setFromMonth, event.target.value)}
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor="to-month">
-            Fecha hasta
-          </label>
-          <input
-            id="to-month"
-            type="month"
-            className="input"
-            value={toMonth}
-            onChange={(event) => updateFilter(setToMonth, event.target.value)}
-          />
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-4">
         <div ref={leftColumnRef} className="space-y-6 xl:col-span-3">
-          <section className="card overflow-hidden">
-            <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-              Publicaciones
-            </h2>
-            {worksQuery.isPending ? (
-              <LoadingState />
-            ) : worksQuery.isError ? (
-              <ErrorState
-                title="No se pudieron cargar las publicaciones"
-                description={worksQuery.error.message}
-              />
-            ) : filteredWorks.length === 0 ? (
-              <EmptyState
-                title="Sin publicaciones en ese rango"
-                description="Ajusta los años o limpia los filtros."
-              />
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Título</th>
-                        <th className="px-4 py-3 font-medium">Año</th>
-                        <th className="px-4 py-3 font-medium">Citas</th>
-                        <th className="px-4 py-3 font-medium">Tipo</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {pageItems.map((work) => (
-                        <tr key={work.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3">
-                            <Link
-                              to={`/works/${encodeURIComponent(work.id)}`}
-                              className="font-medium text-brand-600 hover:text-brand-700"
-                            >
-                              {work.title}
-                            </Link>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">
-                            {work.publication_year ?? '—'}
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{work.cited_by_count}</td>
-                          <td className="px-4 py-3 text-slate-600">{work.type ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <Pagination
-                  page={page}
-                  pageSize={PAGE_SIZE}
-                  totalItems={filteredWorks.length}
-                  onPageChange={setPage}
-                />
-              </>
-            )}
-          </section>
-
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <section className="card overflow-hidden">
               <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-                Red de autores
+                Red de investigadores
               </h2>
               {networkQuery.isPending ? (
                 <LoadingState />
@@ -280,7 +198,7 @@ export function AuthorDetailPage() {
                             {point.country ? `, ${point.country}` : ''}
                           </span>
                           <br />
-                          {point.count} autores colaboradores
+                          {point.count} investigadores colaboradores
                         </Popup>
                       </CircleMarker>
                     ))}
@@ -320,12 +238,117 @@ export function AuthorDetailPage() {
               )}
             </section>
           </div>
+
+          <section className="card overflow-hidden">
+            <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+              Publicaciones
+            </h2>
+            <div className="grid gap-4 border-b border-slate-200 p-4 sm:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="from-month">
+                  Fecha desde
+                </label>
+                <input
+                  id="from-month"
+                  type="month"
+                  className="input"
+                  value={fromMonth}
+                  onChange={(event) => updateFilter(setFromMonth, event.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="to-month">
+                  Fecha hasta
+                </label>
+                <input
+                  id="to-month"
+                  type="month"
+                  className="input"
+                  value={toMonth}
+                  onChange={(event) => updateFilter(setToMonth, event.target.value)}
+                />
+              </div>
+            </div>
+            {worksQuery.isPending ? (
+              <LoadingState />
+            ) : worksQuery.isError ? (
+              <ErrorState
+                title="No se pudieron cargar las publicaciones"
+                description={worksQuery.error.message}
+              />
+            ) : groupedWorks.length === 0 ? (
+              <EmptyState
+                title="Sin publicaciones en ese rango"
+                description="Ajusta las fechas o limpia los filtros."
+              />
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Título</th>
+                        <th className="px-4 py-3 font-medium">Año</th>
+                        <th className="px-4 py-3 font-medium">Citas</th>
+                        <th className="px-4 py-3 font-medium">Tipo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {pageItems.map((work) => (
+                        <tr key={work.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <Link
+                              to={`/works/${encodeURIComponent(work.id)}`}
+                              className="font-medium text-brand-600 hover:text-brand-700"
+                            >
+                              {work.title}
+                            </Link>
+                            {work.versions.length > 1 && (
+                              <details className="mt-2 text-xs text-slate-500">
+                                <summary className="cursor-pointer text-brand-600 hover:text-brand-700">
+                                  {work.versions.length} versiones/artefactos asociados
+                                </summary>
+                                <ul className="mt-2 space-y-1">
+                                  {work.versions.map((version) => (
+                                    <li key={version.id}>
+                                      <Link
+                                        to={`/works/${encodeURIComponent(version.id)}`}
+                                        className="text-brand-600 hover:text-brand-700"
+                                      >
+                                        {version.id}
+                                      </Link>
+                                      {version.doi ? ` · ${version.doi}` : ''}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {work.publication_year ?? '—'}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{work.cited_by_count}</td>
+                          <td className="px-4 py-3 text-slate-600">{work.type ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={page}
+                  pageSize={PAGE_SIZE}
+                  totalItems={groupedWorks.length}
+                  onPageChange={setPage}
+                />
+              </>
+            )}
+          </section>
         </div>
 
         <div className="min-h-0 xl:col-span-1" style={panelHeight ? { height: panelHeight } : undefined}>
           <section className="card flex h-full min-h-0 flex-col overflow-hidden">
             <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-              Autores colaboradores
+              Investigadores colaboradores
             </h2>
             {networkQuery.isPending ? (
               <LoadingState />

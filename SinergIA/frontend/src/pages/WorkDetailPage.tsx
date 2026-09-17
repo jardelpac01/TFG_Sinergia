@@ -53,10 +53,10 @@ export function WorkDetailPage() {
 
         <section className="card overflow-hidden">
           <h2 className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-            Autores
+            Investigadores
           </h2>
           {data.authors.length === 0 ? (
-            <EmptyState title="Sin autores registrados" />
+            <EmptyState title="Sin investigadores registrados" />
           ) : (
             <ul className="divide-y divide-slate-100">
               {data.authors.map((author) => (

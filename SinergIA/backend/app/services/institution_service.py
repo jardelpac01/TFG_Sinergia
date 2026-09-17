@@ -1,8 +1,8 @@
-from typing import List, Optional
+from typing import Optional
 
 from sqlmodel import Session
 
-from app.models import Author, Institution
+from app.models import Institution
 from app.repositories.institution_repository import InstitutionRepository
 
 
@@ -16,7 +16,11 @@ class InstitutionService:
     def get_institution(self, institution_id: str) -> Optional[Institution]:
         return self.repository.get_institution(institution_id)
 
-    def get_institution_authors(self, institution_id: str) -> Optional[List[Author]]:
+    def get_institution_authors(
+        self, institution_id: str, limit: int = 15, offset: int = 0
+    ):
         if not self.repository.get_institution(institution_id):
             return None
-        return self.repository.get_institution_authors(institution_id)
+        return self.repository.get_institution_authors(
+            institution_id, limit=limit, offset=offset
+        )

@@ -30,7 +30,7 @@ export function AuthorsPage() {
   }
 
   function handleExport() {
-    downloadCsv('autores.csv', authors, [
+    downloadCsv('investigadores.csv', authors, [
       { header: 'ID', value: (author) => author.id },
       { header: 'Nombre', value: (author) => author.display_name },
       { header: 'ORCID', value: (author) => author.orcid },
@@ -40,7 +40,7 @@ export function AuthorsPage() {
   return (
     <div>
       <PageHeader
-        title="Autores"
+        title="Investigadores"
         titleClassName="text-4xl font-bold tracking-tight text-slate-900"
       />
 
@@ -78,13 +78,13 @@ export function AuthorsPage() {
         </div>
       ) : isError ? (
         <div className="card">
-          <ErrorState title="No se pudieron cargar los autores" description={error.message} />
+          <ErrorState title="No se pudieron cargar los investigadores" description={error.message} />
         </div>
       ) : authors.length === 0 ? (
         <div className="card">
           <EmptyState
             title="Sin resultados"
-            description="Prueba con otro nombre o revisa que la base de datos tenga autores cargados."
+            description="Prueba con otro nombre o revisa que la base de datos tenga investigadores cargados."
           />
         </div>
       ) : (

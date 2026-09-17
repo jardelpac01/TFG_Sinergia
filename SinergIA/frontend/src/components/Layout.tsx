@@ -83,7 +83,7 @@ export function Layout() {
 
           <NavLink
             to="/authors"
-            title="Autores"
+            title="Investigadores"
             className={({ isActive }) =>
               `group flex items-center gap-3.5 rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
                 collapsed ? 'justify-center' : ''
@@ -107,7 +107,7 @@ export function Layout() {
                 d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
               />
             </svg>
-            {!collapsed && <span className="whitespace-nowrap">Autores</span>}
+            {!collapsed && <span className="whitespace-nowrap">Investigadores</span>}
           </NavLink>
 
           <NavLink

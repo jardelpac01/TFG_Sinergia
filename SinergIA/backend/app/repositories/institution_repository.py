@@ -1,6 +1,7 @@
 from typing import Optional
 
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.models import Institution, Author
@@ -28,10 +29,20 @@ class InstitutionRepository:
     def get_institution(self, institution_id: str) -> Optional[Institution]:
         return self.db.get(Institution, institution_id)
 
-    def get_institution_authors(self, institution_id: str):
+    def get_institution_authors(self, institution_id: str, limit: int = 15, offset: int = 0):
         statement = (
             select(Author)
             .where(Author.last_known_institution_id == institution_id)
+            .options(selectinload(Author.research_group))
             .order_by(Author.display_name.asc())
+            .offset(offset)
+            .limit(limit)
         )
-        return self.db.exec(statement).all()
+        count_statement = (
+            select(func.count())
+            .select_from(Author)
+            .where(Author.last_known_institution_id == institution_id)
+        )
+        items = self.db.exec(statement).all()
+        total = self.db.exec(count_statement).one()
+        return items, total

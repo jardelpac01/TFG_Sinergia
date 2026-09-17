@@ -47,8 +47,11 @@ export const institutionsApi = {
   list: (params: PaginatedListParams, signal?: AbortSignal) =>
     apiGet<PaginatedResponse<Institution>>(`/institutions${buildQuery({ ...params })}`, signal),
   get: (id: string, signal?: AbortSignal) => apiGet<Institution>(`/institutions/${id}`, signal),
-  authors: (id: string, signal?: AbortSignal) =>
-    apiGet<AuthorLite[]>(`/institutions/${id}/authors`, signal),
+  authors: (id: string, params: PaginatedListParams, signal?: AbortSignal) =>
+    apiGet<PaginatedResponse<AuthorLite>>(
+      `/institutions/${id}/authors${buildQuery({ ...params })}`,
+      signal,
+    ),
 }
 
 export const topicsApi = {

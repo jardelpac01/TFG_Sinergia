@@ -1,10 +1,10 @@
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from app.database import get_db
-from app.schemas.author import AuthorReadLite
+from app.schemas.author import AuthorListResponse
 from app.schemas.institution import InstitutionListResponse, InstitutionRead
 from app.services.institution_service import InstitutionService
 
@@ -34,11 +34,21 @@ def read_institution(institution_id: str, db: Session = Depends(get_db)):
     return institution
 
 
-@router.get("/{institution_id}/authors", response_model=List[AuthorReadLite])
-def list_institution_authors(institution_id: str, db: Session = Depends(get_db)):
+@router.get("/{institution_id}/authors", response_model=AuthorListResponse)
+def list_institution_authors(
+    institution_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=15, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
     service = InstitutionService(db)
-    authors = service.get_institution_authors(institution_id)
-    if authors is None:
+    offset = (page - 1) * page_size
+    result = service.get_institution_authors(
+        institution_id, limit=page_size, offset=offset
+    )
+    if result is None:
         raise HTTPException(status_code=404, detail="Institution not found")
-    return authors
-
+    items, total = result
+    return AuthorListResponse(
+        items=items, total=total, page=page, page_size=page_size
+    )

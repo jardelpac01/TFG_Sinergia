@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { downloadCsv } from '../lib/csv'
 import { paginate } from '../lib/pagination'
+import { groupWorksByTitle } from '../lib/worksGrouping'
 
 const PAGE_SIZE = 10
 
@@ -44,7 +45,8 @@ export function WorksPage() {
     })
   }, [data, fromMonth, toMonth])
 
-  const pageItems = useMemo(() => paginate(works, page, PAGE_SIZE), [works, page])
+  const groupedWorks = useMemo(() => groupWorksByTitle(works), [works])
+  const pageItems = useMemo(() => paginate(groupedWorks, page, PAGE_SIZE), [groupedWorks, page])
 
   function updateFilter(setter: (value: string) => void, value: string) {
     setter(value)
@@ -52,13 +54,15 @@ export function WorksPage() {
   }
 
   function handleExport() {
-    downloadCsv('publicaciones.csv', works, [
-      { header: 'ID', value: (work) => work.id },
+    downloadCsv('publicaciones.csv', groupedWorks, [
+      { header: 'IDs OpenAlex', value: (work) => work.workIds.join(' | ') },
       { header: 'Título', value: (work) => work.title },
       { header: 'Año', value: (work) => work.publication_year },
       { header: 'Fecha', value: (work) => work.publication_date },
       { header: 'Tipo', value: (work) => work.type },
-      { header: 'DOI', value: (work) => work.doi },
+      { header: 'DOI principal', value: (work) => work.doi },
+      { header: 'DOIs asociados', value: (work) => work.doiList.join(' | ') },
+      { header: 'Versiones/artefactos', value: (work) => work.versions.length },
       { header: 'Citas', value: (work) => work.cited_by_count },
       { header: 'Acceso abierto', value: (work) => (work.is_oa ? 'Sí' : 'No') },
     ])
@@ -74,7 +78,7 @@ export function WorksPage() {
             type="button"
             className="btn-secondary"
             onClick={handleExport}
-            disabled={works.length === 0}
+            disabled={groupedWorks.length === 0}
           >
             Exportar CSV
           </button>
@@ -140,7 +144,7 @@ export function WorksPage() {
           <LoadingState />
         ) : isError ? (
           <ErrorState title="No se pudieron cargar las publicaciones" description={error.message} />
-        ) : works.length === 0 ? (
+        ) : groupedWorks.length === 0 ? (
           <EmptyState title="Sin resultados" description="Ajusta la búsqueda o el rango de fechas." />
         ) : (
           <>
@@ -164,6 +168,26 @@ export function WorksPage() {
                         >
                           {work.title}
                         </Link>
+                        {work.versions.length > 1 && (
+                          <details className="mt-2 text-xs text-slate-500">
+                            <summary className="cursor-pointer text-brand-600 hover:text-brand-700">
+                              {work.versions.length} versiones/artefactos asociados
+                            </summary>
+                            <ul className="mt-2 space-y-1">
+                              {work.versions.map((version) => (
+                                <li key={version.id}>
+                                  <Link
+                                    to={`/works/${encodeURIComponent(version.id)}`}
+                                    className="text-brand-600 hover:text-brand-700"
+                                  >
+                                    {version.id}
+                                  </Link>
+                                  {version.doi ? ` · ${version.doi}` : ''}
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-600">{work.publication_year ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{work.cited_by_count}</td>
@@ -176,7 +200,7 @@ export function WorksPage() {
             <Pagination
               page={page}
               pageSize={PAGE_SIZE}
-              totalItems={works.length}
+              totalItems={groupedWorks.length}
               onPageChange={setPage}
             />
           </>
