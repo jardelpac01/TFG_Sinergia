@@ -127,7 +127,14 @@ export function AuthorDetailPage() {
     <div>
       <PageHeader
         title={author.display_name}
-        subtitle={author.orcid ? `ORCID: ${author.orcid}` : 'Sin ORCID registrado'}
+        subtitle={
+          <>
+            {author.orcid ? `ORCID: ${author.orcid}` : 'Sin ORCID registrado'}
+            {author.research_group_name && (
+              <span className="badge ml-2 align-middle">Grupo {author.research_group_name}</span>
+            )}
+          </>
+        }
         titleClassName="text-4xl font-bold tracking-tight text-slate-900"
         actions={
           <button

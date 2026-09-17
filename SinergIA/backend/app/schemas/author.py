@@ -27,6 +27,8 @@ class AuthorReadLite(SQLModel):
     id: str
     display_name: str
     orcid: Optional[str] = None
+    research_group_id: Optional[int] = None
+    research_group_name: Optional[str] = None
 
 class AuthorReadWithRelationships(AuthorRead):
     last_known_institution: Optional[InstitutionRead] = None

@@ -2,6 +2,8 @@ export interface AuthorLite {
   id: string
   display_name: string
   orcid: string | null
+  research_group_id: number | null
+  research_group_name: string | null
 }
 
 export interface PaginatedResponse<T> {

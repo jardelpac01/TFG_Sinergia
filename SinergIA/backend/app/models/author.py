@@ -29,3 +29,7 @@ class Author(SQLModel, table=True):
     works: List["Work"] = Relationship(back_populates="authors", link_model=AuthorWork)
     topics: List["Topic"] = Relationship(link_model=AuthorTopic)
     user: Optional["User"] = Relationship(back_populates="author")
+
+    @property
+    def research_group_name(self) -> Optional[str]:
+        return self.research_group.name if self.research_group else None

@@ -116,6 +116,11 @@ export function AuthorsPage() {
                     {author.display_name}
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">{author.orcid ?? 'Sin ORCID'}</p>
+                  {author.research_group_name && (
+                    <span className="badge mt-3 inline-block">
+                      Grupo {author.research_group_name}
+                    </span>
+                  )}
                 </div>
               </Link>
             ))}

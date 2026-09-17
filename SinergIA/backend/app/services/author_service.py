@@ -75,6 +75,8 @@ class AuthorService:
                 id=author.id,
                 display_name=author.display_name,
                 orcid=author.orcid,
+                research_group_id=author.research_group_id,
+                research_group_name=author.research_group_name,
             ),
             coauthors=coauthors,
             country_collaborations=countries,

@@ -24,7 +24,7 @@ export function HomePage() {
           SinergIA
         </h1>
         <p className="mt-4 text-base text-slate-600">
-          Busca autores, consulta sus publicaciones, filtra por años y exporta los resultados.
+        Conectando el conocimiento: Busca autores, consulta sus publicaciones.
         </p>
 
         <form

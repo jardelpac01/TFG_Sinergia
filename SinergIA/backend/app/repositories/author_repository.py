@@ -1,10 +1,10 @@
 from typing import Optional
 
-from sqlalchemy import desc, func, or_, text
+from sqlalchemy import case, desc, func, or_, text
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from app.models import Author, AuthorWork, AuthorWorkAffiliation, Institution, Work
+from app.models import Author, AuthorWork, AuthorWorkAffiliation, Institution, ResearchGroup, Work
 
 
 class AuthorRepository:
@@ -12,7 +12,7 @@ class AuthorRepository:
         self.db = db
 
     def list_authors(self, q: Optional[str] = None, limit: int = 50, offset: int = 0):
-        statement = select(Author)
+        statement = select(Author).options(selectinload(Author.research_group))
         count_statement = select(func.count()).select_from(Author)
         if q:
             search = f"%{q.lower()}%"
@@ -22,7 +22,15 @@ class AuthorRepository:
             statement = statement.where(condition)
             count_statement = count_statement.where(condition)
         total = self.db.exec(count_statement).one()
-        statement = statement.order_by(Author.display_name.asc()).offset(offset).limit(limit)
+        statement = (
+            statement.outerjoin(ResearchGroup, Author.research_group_id == ResearchGroup.id)
+            .order_by(
+                case((func.lower(ResearchGroup.name) == "minerva", 0), else_=1),
+                Author.display_name.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
         items = self.db.exec(statement).all()
         return items, total
 
@@ -30,7 +38,11 @@ class AuthorRepository:
         statement = (
             select(Author)
             .where(Author.id == author_id)
-            .options(selectinload(Author.topics), selectinload(Author.last_known_institution))
+            .options(
+                selectinload(Author.topics),
+                selectinload(Author.last_known_institution),
+                selectinload(Author.research_group),
+            )
         )
         return self.db.exec(statement).one_or_none()
 
