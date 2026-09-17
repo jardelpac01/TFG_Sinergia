@@ -14,8 +14,8 @@ const PAGE_SIZE = 10
 
 export function AuthorDetailPage() {
   const { authorId = '' } = useParams()
-  const [fromYear, setFromYear] = useState('')
-  const [toYear, setToYear] = useState('')
+  const [fromMonth, setFromMonth] = useState('')
+  const [toMonth, setToMonth] = useState('')
   const [page, setPage] = useState(1)
   const leftColumnRef = useRef<HTMLDivElement>(null)
   const [panelHeight, setPanelHeight] = useState<number>()
@@ -40,16 +40,24 @@ export function AuthorDetailPage() {
 
   const filteredWorks = useMemo(() => {
     const works = worksQuery.data ?? []
-    const from = fromYear ? Number(fromYear) : null
-    const to = toYear ? Number(toYear) : null
+    const fromYear = fromMonth ? Number(fromMonth.slice(0, 4)) : null
+    const toYear = toMonth ? Number(toMonth.slice(0, 4)) : null
 
     return works.filter((work) => {
-      if (work.publication_year === null) return from === null && to === null
-      if (from !== null && work.publication_year < from) return false
-      if (to !== null && work.publication_year > to) return false
+      const workMonth = work.publication_date?.slice(0, 7) ?? null
+
+      if (workMonth) {
+        if (fromMonth && workMonth < fromMonth) return false
+        if (toMonth && workMonth > toMonth) return false
+        return true
+      }
+
+      if (work.publication_year === null) return !fromMonth && !toMonth
+      if (fromYear !== null && work.publication_year < fromYear) return false
+      if (toYear !== null && work.publication_year > toYear) return false
       return true
     })
-  }, [worksQuery.data, fromYear, toYear])
+  }, [worksQuery.data, fromMonth, toMonth])
 
   const pageItems = useMemo(() => paginate(filteredWorks, page, PAGE_SIZE), [filteredWorks, page])
 
@@ -89,7 +97,7 @@ export function AuthorDetailPage() {
 
   function handleExport() {
     const author = authorQuery.data
-    const range = [fromYear || 'inicio', toYear || 'actual'].join('-')
+    const range = [fromMonth || 'inicio', toMonth || 'actual'].join('_')
     downloadCsv(`trabajos-${author?.display_name ?? authorId}-${range}.csv`, filteredWorks, [
       { header: 'ID', value: (work) => work.id },
       { header: 'Título', value: (work) => work.title },
@@ -135,31 +143,27 @@ export function AuthorDetailPage() {
 
       <div className="card mb-6 grid gap-4 p-4 sm:grid-cols-2">
         <div>
-          <label className="label" htmlFor="from-year">
-            Año desde
+          <label className="label" htmlFor="from-month">
+            Fecha desde
           </label>
           <input
-            id="from-year"
-            type="number"
-            inputMode="numeric"
+            id="from-month"
+            type="month"
             className="input"
-            placeholder="2018"
-            value={fromYear}
-            onChange={(event) => updateFilter(setFromYear, event.target.value)}
+            value={fromMonth}
+            onChange={(event) => updateFilter(setFromMonth, event.target.value)}
           />
         </div>
         <div>
-          <label className="label" htmlFor="to-year">
-            Año hasta
+          <label className="label" htmlFor="to-month">
+            Fecha hasta
           </label>
           <input
-            id="to-year"
-            type="number"
-            inputMode="numeric"
+            id="to-month"
+            type="month"
             className="input"
-            placeholder="2025"
-            value={toYear}
-            onChange={(event) => updateFilter(setToYear, event.target.value)}
+            value={toMonth}
+            onChange={(event) => updateFilter(setToMonth, event.target.value)}
           />
         </div>
       </div>

@@ -1,5 +1,6 @@
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -14,7 +15,10 @@ class WorkRepository:
         statement = select(Work)
         if q:
             search = f"%{q.lower()}%"
-            statement = statement.where((Work.title.ilike(search)) | (Work.doi.ilike(search)))
+            statement = statement.where(
+                (func.unaccent(func.lower(Work.title)).ilike(func.unaccent(search)))
+                | (Work.doi.ilike(search))
+            )
         statement = statement.order_by(
             Work.publication_year.desc().nulls_last(), Work.title.asc()
         ).limit(limit)

@@ -1,5 +1,6 @@
 from typing import Optional
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models import Topic
@@ -14,9 +15,9 @@ class TopicRepository:
         if q:
             search = f"%{q.lower()}%"
             statement = statement.where(
-                (Topic.display_name.ilike(search))
-                | (Topic.field.ilike(search))
-                | (Topic.domain.ilike(search))
+                (func.unaccent(func.lower(Topic.display_name)).ilike(func.unaccent(search)))
+                | (func.unaccent(func.lower(Topic.field)).ilike(func.unaccent(search)))
+                | (func.unaccent(func.lower(Topic.domain)).ilike(func.unaccent(search)))
             )
         statement = statement.order_by(Topic.display_name.asc()).limit(limit)
         return self.db.exec(statement).all()

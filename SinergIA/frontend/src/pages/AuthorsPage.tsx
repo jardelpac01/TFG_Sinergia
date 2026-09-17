@@ -8,7 +8,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { downloadCsv } from '../lib/csv'
 
-const PAGE_SIZE = 9
+const PAGE_SIZE = 18
 
 export function AuthorsPage() {
   const [search, setSearch] = useState('')
@@ -43,16 +43,6 @@ export function AuthorsPage() {
         title="Autores"
         subtitle="Busca investigadores por nombre u ORCID"
         titleClassName="text-4xl font-bold tracking-tight text-slate-900"
-        actions={
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={handleExport}
-            disabled={authors.length === 0}
-          >
-            Exportar CSV
-          </button>
-        }
       />
 
       <div className="card mb-6 p-4">

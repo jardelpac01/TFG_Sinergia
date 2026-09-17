@@ -1,5 +1,6 @@
 from typing import Optional
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models import Institution, Author
@@ -14,7 +15,8 @@ class InstitutionRepository:
         if q:
             search = f"%{q.lower()}%"
             statement = statement.where(
-                (Institution.name.ilike(search)) | (Institution.country_code.ilike(search))
+                (func.unaccent(func.lower(Institution.name)).ilike(func.unaccent(search)))
+                | (Institution.country_code.ilike(search))
             )
         statement = statement.order_by(Institution.name.asc()).limit(limit)
         return self.db.exec(statement).all()

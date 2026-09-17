@@ -13,8 +13,8 @@ const PAGE_SIZE = 10
 
 export function WorksPage() {
   const [search, setSearch] = useState('')
-  const [fromYear, setFromYear] = useState('')
-  const [toYear, setToYear] = useState('')
+  const [fromMonth, setFromMonth] = useState('')
+  const [toMonth, setToMonth] = useState('')
   const [page, setPage] = useState(1)
   const debouncedSearch = useDebouncedValue(search)
 
@@ -24,16 +24,25 @@ export function WorksPage() {
   })
 
   const works = useMemo(() => {
-    const from = fromYear ? Number(fromYear) : null
-    const to = toYear ? Number(toYear) : null
+    const fromYear = fromMonth ? Number(fromMonth.slice(0, 4)) : null
+    const toYear = toMonth ? Number(toMonth.slice(0, 4)) : null
 
     return (data ?? []).filter((work) => {
-      if (work.publication_year === null) return from === null && to === null
-      if (from !== null && work.publication_year < from) return false
-      if (to !== null && work.publication_year > to) return false
+      const workMonth = work.publication_date?.slice(0, 7) ?? null
+
+      if (workMonth) {
+        if (fromMonth && workMonth < fromMonth) return false
+        if (toMonth && workMonth > toMonth) return false
+        return true
+      }
+
+      // Sin fecha exacta: usar el año como aproximación.
+      if (work.publication_year === null) return !fromMonth && !toMonth
+      if (fromYear !== null && work.publication_year < fromYear) return false
+      if (toYear !== null && work.publication_year > toYear) return false
       return true
     })
-  }, [data, fromYear, toYear])
+  }, [data, fromMonth, toMonth])
 
   const pageItems = useMemo(() => paginate(works, page, PAGE_SIZE), [works, page])
 
@@ -59,7 +68,7 @@ export function WorksPage() {
     <div>
       <PageHeader
         title="Publicaciones"
-        subtitle="Filtra por título, DOI y rango de años"
+        subtitle="Filtra por título, DOI y rango de fechas"
         actions={
           <button
             type="button"
@@ -87,28 +96,26 @@ export function WorksPage() {
         </div>
         <div>
           <label className="label" htmlFor="works-from">
-            Año desde
+            Fecha desde
           </label>
           <input
             id="works-from"
-            type="number"
+            type="month"
             className="input"
-            placeholder="2018"
-            value={fromYear}
-            onChange={(event) => updateFilter(setFromYear, event.target.value)}
+            value={fromMonth}
+            onChange={(event) => updateFilter(setFromMonth, event.target.value)}
           />
         </div>
         <div>
           <label className="label" htmlFor="works-to">
-            Año hasta
+            Fecha hasta
           </label>
           <input
             id="works-to"
-            type="number"
+            type="month"
             className="input"
-            placeholder="2025"
-            value={toYear}
-            onChange={(event) => updateFilter(setToYear, event.target.value)}
+            value={toMonth}
+            onChange={(event) => updateFilter(setToMonth, event.target.value)}
           />
         </div>
       </div>
@@ -119,7 +126,7 @@ export function WorksPage() {
         ) : isError ? (
           <ErrorState title="No se pudieron cargar las publicaciones" description={error.message} />
         ) : works.length === 0 ? (
-          <EmptyState title="Sin resultados" description="Ajusta la búsqueda o el rango de años." />
+          <EmptyState title="Sin resultados" description="Ajusta la búsqueda o el rango de fechas." />
         ) : (
           <>
             <div className="overflow-x-auto">
