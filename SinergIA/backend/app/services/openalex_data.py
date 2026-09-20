@@ -682,6 +682,8 @@ class OpenAlexService:
                 results_by_prisma_id[prisma_id] = {
                     "prisma_id": prisma_id,
                     "display_name": profile["display_name"],
+                    "research_group_code": profile.get("research_group_code"),
+                    "research_group_name": profile.get("research_group_name"),
                     "status": "skipped",
                     "error": "No ORCID or OpenAlex ID linked in Prisma.",
                 }
@@ -701,6 +703,8 @@ class OpenAlexService:
                 results_by_prisma_id[prisma_id] = {
                     "prisma_id": prisma_id,
                     "display_name": profile["display_name"],
+                    "research_group_code": profile.get("research_group_code"),
+                    "research_group_name": profile.get("research_group_name"),
                     "status": "failed",
                     "error": str(exc),
                 }
@@ -710,14 +714,33 @@ class OpenAlexService:
                 results_by_prisma_id[prisma_id] = {
                     "prisma_id": prisma_id,
                     "display_name": profile["display_name"],
+                    "research_group_code": profile.get("research_group_code"),
+                    "research_group_name": profile.get("research_group_name"),
                     "status": "failed",
                     "error": "No author was found in OpenAlex for this identifier.",
                 }
                 continue
 
+            research_group_code = profile.get("research_group_code")
+            research_group_name = profile.get("research_group_name")
+            research_group_id = None
+            if research_group_code and research_group_name:
+                research_group = self.repo.upsert_research_group(
+                    code=research_group_code,
+                    name=research_group_name,
+                    website_url=(
+                        f"https://prisma.us.es/colectivo/grupo/{research_group_code}"
+                    ),
+                )
+                research_group_id = research_group.id
+            self.repo.assign_author_research_group(author_id, research_group_id)
+            self.repo.commit()
+
             results_by_prisma_id[prisma_id] = {
                 "prisma_id": prisma_id,
                 "display_name": profile["display_name"],
+                "research_group_code": research_group_code,
+                "research_group_name": research_group_name,
                 "status": "created" if is_new_author else "updated",
                 "author_id": author_id,
             }

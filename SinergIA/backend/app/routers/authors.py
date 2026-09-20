@@ -5,6 +5,7 @@ from sqlmodel import Session
 
 from app.database import get_db
 from app.schemas.author import AuthorCollaboratorsResponse, AuthorListResponse, AuthorNetwork, AuthorReadLite
+from app.schemas.research_group import ResearchGroupRead
 from app.schemas.work import WorkReadWithRelationships
 from app.services.author_service import AuthorService
 
@@ -15,14 +16,27 @@ router = APIRouter(prefix="/authors", tags=["authors"])
 @router.get("", response_model=AuthorListResponse)
 def list_authors(
     q: Optional[str] = Query(default=None, description="Search authors by name or ORCID"),
+    research_group_id: Optional[int] = Query(
+        default=None, description="Filter authors by research group"
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=9, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
     service = AuthorService(db)
     offset = (page - 1) * page_size
-    items, total = service.list_authors(q=q, limit=page_size, offset=offset)
+    items, total = service.list_authors(
+        q=q,
+        research_group_id=research_group_id,
+        limit=page_size,
+        offset=offset,
+    )
     return AuthorListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/research-groups", response_model=List[ResearchGroupRead])
+def list_research_groups(db: Session = Depends(get_db)):
+    return AuthorService(db).list_research_groups()
 
 @router.get("/collaborators/by-name", response_model=AuthorCollaboratorsResponse)
 def get_collaborators_by_name(

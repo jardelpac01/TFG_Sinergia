@@ -1,10 +1,11 @@
-import { apiGet, buildQuery } from './client'
+import { apiDownload, apiGet, buildQuery } from './client'
 import type {
   AuthorCollaboratorsResponse,
   AuthorLite,
   AuthorNetwork,
   Institution,
   PaginatedResponse,
+  ResearchGroup,
   Topic,
   WorkDetail,
   WorkLite,
@@ -17,8 +18,20 @@ export interface ListParams {
 
 export interface PaginatedListParams {
   q?: string
+  research_group_id?: number
   page?: number
   page_size?: number
+}
+
+export interface WorkExportParams {
+  q?: string
+  author_q?: string
+  author_id?: string
+  research_group_id?: number
+  institution_id?: string
+  topic_id?: string
+  from_month?: string
+  to_month?: string
 }
 
 export const authorsApi = {
@@ -28,6 +41,8 @@ export const authorsApi = {
   works: (id: string, signal?: AbortSignal) => apiGet<WorkDetail[]>(`/authors/${id}/works`, signal),
   network: (id: string, signal?: AbortSignal) =>
     apiGet<AuthorNetwork>(`/authors/${id}/network`, signal),
+  researchGroups: (signal?: AbortSignal) =>
+    apiGet<ResearchGroup[]>('/authors/research-groups', signal),
   collaboratorsByName: (name: string, signal?: AbortSignal) =>
     apiGet<AuthorCollaboratorsResponse>(
       `/authors/collaborators/by-name${buildQuery({ name })}`,
@@ -39,6 +54,8 @@ export const worksApi = {
   list: (params: ListParams, signal?: AbortSignal) =>
     apiGet<WorkLite[]>(`/works${buildQuery({ ...params })}`, signal),
   get: (id: string, signal?: AbortSignal) => apiGet<WorkDetail>(`/works/${id}`, signal),
+  export: (params: WorkExportParams, signal?: AbortSignal) =>
+    apiDownload(`/works/export${buildQuery({ ...params })}`, signal),
   authors: (id: string, signal?: AbortSignal) =>
     apiGet<AuthorLite[]>(`/works/${id}/authors`, signal),
 }

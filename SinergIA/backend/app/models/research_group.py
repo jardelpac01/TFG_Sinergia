@@ -6,6 +6,7 @@ class ResearchGroup(SQLModel, table=True):
     __tablename__ = "research_groups"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    code: Optional[str] = Field(default=None, unique=True, index=True, max_length=50)
     name: str = Field(unique=True, index=True)
     description: Optional[str] = None
     website_url: Optional[str] = None

@@ -3,11 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import { Link, useParams } from 'react-router-dom'
-import { authorsApi } from '../api/endpoints'
+import { authorsApi, worksApi } from '../api/endpoints'
 import { PageHeader } from '../components/PageHeader'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
-import { downloadCsv } from '../lib/csv'
+import { downloadBlob } from '../lib/csv'
 import { paginate } from '../lib/pagination'
 import { groupWorksByTitle } from '../lib/worksGrouping'
 
@@ -18,6 +18,8 @@ export function AuthorDetailPage() {
   const [fromMonth, setFromMonth] = useState('')
   const [toMonth, setToMonth] = useState('')
   const [page, setPage] = useState(1)
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const leftColumnRef = useRef<HTMLDivElement>(null)
   const [panelHeight, setPanelHeight] = useState<number>()
 
@@ -78,7 +80,10 @@ export function AuthorDetailPage() {
     }))
   }, [networkQuery.data])
 
-  const worksByYear = networkQuery.data?.works_by_year ?? []
+  const worksByYear = useMemo(
+    () => networkQuery.data?.works_by_year ?? [],
+    [networkQuery.data],
+  )
 
   useEffect(() => {
     const element = leftColumnRef.current
@@ -97,25 +102,32 @@ export function AuthorDetailPage() {
     setPage(1)
   }
 
-  function handleExport() {
+  async function handleExport() {
     const author = authorQuery.data
     const range = [fromMonth || 'inicio', toMonth || 'actual'].join('_')
-    downloadCsv(`trabajos-${author?.display_name ?? authorId}-${range}.csv`, groupedWorks, [
-      { header: 'IDs OpenAlex', value: (work) => work.workIds.join(' | ') },
-      { header: 'Título', value: (work) => work.title },
-      { header: 'Año', value: (work) => work.publication_year },
-      { header: 'Fecha', value: (work) => work.publication_date },
-      { header: 'Tipo', value: (work) => work.type },
-      { header: 'DOI principal', value: (work) => work.doi },
-      { header: 'DOIs asociados', value: (work) => work.doiList.join(' | ') },
-      { header: 'Versiones/artefactos', value: (work) => work.versions.length },
-      { header: 'Citas', value: (work) => work.cited_by_count },
-      { header: 'Acceso abierto', value: (work) => (work.is_oa ? 'Sí' : 'No') },
-      { header: 'Estado OA', value: (work) => work.oa_status },
-      { header: 'Fuente', value: (work) => work.source?.display_name ?? work.source_id },
-      { header: 'Temas', value: (work) => work.topics.map((t) => t.display_name).join(' | ') },
-      { header: 'Coautores', value: (work) => work.authors.map((a) => a.display_name).join(' | ') },
-    ])
+    const filenameAuthor = (author?.display_name ?? authorId).replace(
+      /[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]+/g,
+      '-',
+    )
+
+    setIsExporting(true)
+    setExportError(null)
+    try {
+      const blob = await worksApi.export({
+        author_id: authorId,
+        from_month: fromMonth,
+        to_month: toMonth,
+      })
+      downloadBlob(`trabajos-${filenameAuthor}-${range}.csv`, blob)
+    } catch (exportFailure) {
+      setExportError(
+        exportFailure instanceof Error
+          ? exportFailure.message
+          : 'No se pudieron exportar las publicaciones.',
+      )
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   if (authorQuery.isPending) return <LoadingState label="Cargando investigador…" />
@@ -145,12 +157,18 @@ export function AuthorDetailPage() {
             type="button"
             className="btn-primary"
             onClick={handleExport}
-            disabled={groupedWorks.length === 0}
+            disabled={isExporting || groupedWorks.length === 0}
           >
-            Exportar
+            {isExporting ? 'Exportando…' : 'Exportar'}
           </button>
         }
       />
+
+      {exportError && (
+        <div className="mb-6">
+          <ErrorState title="No se pudieron exportar las publicaciones" description={exportError} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-4">
         <div ref={leftColumnRef} className="space-y-6 xl:col-span-3">

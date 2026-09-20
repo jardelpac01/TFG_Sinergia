@@ -11,6 +11,7 @@ from app.models import (
     AuthorWork,
     AuthorWorkAffiliation,
     Institution,
+    ResearchGroup,
     Source,
     Topic,
     Work,
@@ -34,6 +35,39 @@ class IngestionRepository:
 
     def get_author(self, author_id: str):
         return self.db.get(Author, author_id)
+
+    def upsert_research_group(
+        self, code: str, name: str, website_url: str
+    ) -> ResearchGroup:
+        research_group = self.db.exec(
+            select(ResearchGroup).where(ResearchGroup.code == code)
+        ).first()
+        if research_group is None:
+            research_group = self.db.exec(
+                select(ResearchGroup).where(ResearchGroup.name == name)
+            ).first()
+        if research_group is None:
+            research_group = ResearchGroup(
+                code=code,
+                name=name,
+                website_url=website_url,
+            )
+            self.db.add(research_group)
+        else:
+            research_group.code = code
+            research_group.name = name
+            research_group.website_url = website_url
+        self.db.flush()
+        return research_group
+
+    def assign_author_research_group(
+        self, author_id: str, research_group_id: int | None
+    ) -> None:
+        author = self.get_author(author_id)
+        if author is None:
+            raise ValueError(f"Author {author_id} does not exist.")
+        author.research_group_id = research_group_id
+        self.db.add(author)
 
     def upsert_author(self, author_data: dict, existing_author: Author | None = None):
         author_id = author_data.get("id")

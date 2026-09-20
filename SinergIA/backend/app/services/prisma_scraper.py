@@ -1,4 +1,5 @@
 import re
+import time
 
 from app.services.http_client import fetch_with_retries
 
@@ -8,6 +9,10 @@ PROFILE_LINK_RE = re.compile(r"investigador/(\d+)")
 NAME_RE = re.compile(r'<h1[^>]*id="nombre"[^>]*>(.*?)</h1>', re.DOTALL)
 DEPARTMENT_RE = re.compile(
     r"departamento/([A-Za-z0-9]+)\"[^>]*>\s*([^<]+?)\s*</a>", re.DOTALL
+)
+RESEARCH_GROUP_RE = re.compile(
+    r'href="[^"]*/colectivo/grupo/([^"/?#]+)"[^>]*>(.*?)</a>',
+    re.DOTALL | re.IGNORECASE,
 )
 ORCID_RE = re.compile(r"orcid\.org/([0-9Xx\-]+)")
 OPENALEX_RE = re.compile(r"openalex\.org/authors/([A-Za-z0-9]+)")
@@ -49,10 +54,6 @@ def list_researcher_ids_by_department(department_code: str) -> list[int]:
 
 
 def fetch_researcher_profile(prisma_id: int) -> dict | None:
-    """Returns a dict with prisma_id, display_name, department, orcid,
-    openalex_author_id and dialnet_code, or None if the profile has no name
-    (e.g. an invalid/removed ID).
-    """
     url = f"{BASE_URL}/investigador/{prisma_id}"
     html = _fetch_html(url)
 
@@ -65,6 +66,12 @@ def fetch_researcher_profile(prisma_id: int) -> dict | None:
 
     department_match = DEPARTMENT_RE.search(html)
     department = _clean_text(department_match.group(2)) if department_match else None
+
+    research_group_match = RESEARCH_GROUP_RE.search(html)
+    research_group_code = research_group_match.group(1) if research_group_match else None
+    research_group_name = (
+        _clean_text(research_group_match.group(2)) if research_group_match else None
+    )
 
     orcid_match = ORCID_RE.search(html)
     orcid = orcid_match.group(1) if orcid_match else None
@@ -79,6 +86,8 @@ def fetch_researcher_profile(prisma_id: int) -> dict | None:
         "prisma_id": prisma_id,
         "display_name": display_name,
         "department": department,
+        "research_group_code": research_group_code,
+        "research_group_name": research_group_name,
         "orcid": orcid,
         "openalex_author_id": openalex_author_id,
         "dialnet_code": dialnet_code,

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import case, desc, func, or_, text
+from sqlalchemy import desc, func, or_, text
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
@@ -11,9 +11,20 @@ class AuthorRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def list_authors(self, q: Optional[str] = None, limit: int = 50, offset: int = 0):
+    def list_authors(
+        self,
+        q: Optional[str] = None,
+        research_group_id: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ):
         statement = select(Author).options(selectinload(Author.research_group))
         count_statement = select(func.count()).select_from(Author)
+        if research_group_id is not None:
+            statement = statement.where(Author.research_group_id == research_group_id)
+            count_statement = count_statement.where(
+                Author.research_group_id == research_group_id
+            )
         if q:
             search = f"%{q.lower()}%"
             condition = (
@@ -22,17 +33,23 @@ class AuthorRepository:
             statement = statement.where(condition)
             count_statement = count_statement.where(condition)
         total = self.db.exec(count_statement).one()
-        statement = (
-            statement.outerjoin(ResearchGroup, Author.research_group_id == ResearchGroup.id)
-            .order_by(
-                case((func.lower(ResearchGroup.name) == "minerva", 0), else_=1),
-                Author.display_name.asc(),
-            )
-            .offset(offset)
-            .limit(limit)
-        )
+        statement = statement.order_by(Author.display_name.asc()).offset(offset).limit(limit)
         items = self.db.exec(statement).all()
         return items, total
+
+    def list_research_groups(self):
+        statement = (
+            select(ResearchGroup)
+            .where(
+                select(func.count())
+                .select_from(Author)
+                .where(Author.research_group_id == ResearchGroup.id)
+                .scalar_subquery()
+                > 0
+            )
+            .order_by(ResearchGroup.name.asc())
+        )
+        return self.db.exec(statement).all()
 
     def get_author(self, author_id: str):
         statement = (

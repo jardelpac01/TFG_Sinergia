@@ -6,7 +6,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
-import { downloadCsv } from '../lib/csv'
+import { downloadBlob } from '../lib/csv'
 import { paginate } from '../lib/pagination'
 import { groupWorksByTitle } from '../lib/worksGrouping'
 
@@ -17,6 +17,8 @@ export function WorksPage() {
   const [fromMonth, setFromMonth] = useState('')
   const [toMonth, setToMonth] = useState('')
   const [page, setPage] = useState(1)
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const debouncedSearch = useDebouncedValue(search)
 
   const { data, isPending, isError, error } = useQuery({
@@ -53,19 +55,25 @@ export function WorksPage() {
     setPage(1)
   }
 
-  function handleExport() {
-    downloadCsv('publicaciones.csv', groupedWorks, [
-      { header: 'IDs OpenAlex', value: (work) => work.workIds.join(' | ') },
-      { header: 'Título', value: (work) => work.title },
-      { header: 'Año', value: (work) => work.publication_year },
-      { header: 'Fecha', value: (work) => work.publication_date },
-      { header: 'Tipo', value: (work) => work.type },
-      { header: 'DOI principal', value: (work) => work.doi },
-      { header: 'DOIs asociados', value: (work) => work.doiList.join(' | ') },
-      { header: 'Versiones/artefactos', value: (work) => work.versions.length },
-      { header: 'Citas', value: (work) => work.cited_by_count },
-      { header: 'Acceso abierto', value: (work) => (work.is_oa ? 'Sí' : 'No') },
-    ])
+  async function handleExport() {
+    setIsExporting(true)
+    setExportError(null)
+    try {
+      const blob = await worksApi.export({
+        q: debouncedSearch,
+        from_month: fromMonth,
+        to_month: toMonth,
+      })
+      downloadBlob('publicaciones.csv', blob)
+    } catch (exportFailure) {
+      setExportError(
+        exportFailure instanceof Error
+          ? exportFailure.message
+          : 'No se pudieron exportar las publicaciones.',
+      )
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   return (
@@ -76,14 +84,20 @@ export function WorksPage() {
         actions={
           <button
             type="button"
-            className="btn-secondary"
+            className="btn-primary"
             onClick={handleExport}
-            disabled={groupedWorks.length === 0}
+            disabled={isExporting || groupedWorks.length === 0}
           >
-            Exportar CSV
+            {isExporting ? 'Exportando…' : 'Exportar'}
           </button>
         }
       />
+
+      {exportError && (
+        <div className="mb-4">
+          <ErrorState title="No se pudieron exportar las publicaciones" description={exportError} />
+        </div>
+      )}
 
       <div className="card mb-4 grid gap-4 p-4 sm:grid-cols-4">
         <div className="sm:col-span-2">

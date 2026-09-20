@@ -35,6 +35,19 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
   return (await response.json()) as T
 }
 
+export async function apiDownload(path: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    signal,
+    headers: { Accept: 'text/csv' },
+  })
+
+  if (!response.ok) {
+    throw new ApiError(await readErrorMessage(response), response.status)
+  }
+
+  return response.blob()
+}
+
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const body = await response.json()

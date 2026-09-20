@@ -36,7 +36,7 @@ export function HomePage() {
         >
           <input
             className="input text-base py-3 px-4 shadow-sm"
-            placeholder="Buscar un investigador por nombre u ORCID"
+            placeholder="Busca un investigador por nombre u ORCID"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />

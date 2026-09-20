@@ -98,6 +98,8 @@ class PrismaDepartmentIngestionRequest(SQLModel):
 class PrismaDepartmentIngestItem(SQLModel):
     prisma_id: int
     display_name: Optional[str] = None
+    research_group_code: Optional[str] = None
+    research_group_name: Optional[str] = None
     status: str = Field(
         description=(
             "One of: 'created' (new author ingested), 'updated' (existing "

@@ -6,6 +6,14 @@ export interface AuthorLite {
   research_group_name: string | null
 }
 
+export interface ResearchGroup {
+  id: number
+  code: string | null
+  name: string
+  description: string | null
+  website_url: string | null
+}
+
 export interface PaginatedResponse<T> {
   items: T[]
   total: number

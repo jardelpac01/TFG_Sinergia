@@ -18,6 +18,8 @@ class PrismaAuthorRepository:
 
         existing.display_name = profile["display_name"]
         existing.department = profile.get("department")
+        existing.research_group_code = profile.get("research_group_code")
+        existing.research_group_name = profile.get("research_group_name")
         existing.orcid = profile.get("orcid")
         existing.openalex_author_id = profile.get("openalex_author_id")
         existing.dialnet_code = profile.get("dialnet_code")
