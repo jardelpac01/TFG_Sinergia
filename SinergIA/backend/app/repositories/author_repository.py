@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional
 
 from sqlalchemy import desc, func, or_, text
@@ -15,6 +16,8 @@ class AuthorRepository:
         self,
         q: Optional[str] = None,
         research_group_id: Optional[int] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
         limit: int = 50,
         offset: int = 0,
     ):
@@ -32,6 +35,31 @@ class AuthorRepository:
             ) | (Author.orcid.ilike(search))
             statement = statement.where(condition)
             count_statement = count_statement.where(condition)
+        if from_date or to_date:
+            date_filters = []
+            if from_date:
+                date_filters.append(
+                    (Work.publication_date >= from_date)
+                    | (
+                        Work.publication_date.is_(None)
+                        & (Work.publication_year >= from_date.year)
+                    )
+                )
+            if to_date:
+                date_filters.append(
+                    (Work.publication_date <= to_date)
+                    | (
+                        Work.publication_date.is_(None)
+                        & (Work.publication_year <= to_date.year)
+                    )
+                )
+            matching_author_ids = (
+                select(AuthorWork.author_id)
+                .join(Work, Work.id == AuthorWork.work_id)
+                .where(*date_filters)
+            )
+            statement = statement.where(Author.id.in_(matching_author_ids))
+            count_statement = count_statement.where(Author.id.in_(matching_author_ids))
         total = self.db.exec(count_statement).one()
         statement = statement.order_by(Author.display_name.asc()).offset(offset).limit(limit)
         items = self.db.exec(statement).all()

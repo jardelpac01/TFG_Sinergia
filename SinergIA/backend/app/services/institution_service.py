@@ -13,6 +13,9 @@ class InstitutionService:
     def list_institutions(self, q: Optional[str] = None, limit: int = 50, offset: int = 0):
         return self.repository.list_institutions(q=q, limit=limit, offset=offset)
 
+    def list_institutions_for_export(self, q: Optional[str] = None):
+        return self.repository.list_institutions_for_export(q=q)
+
     def get_institution(self, institution_id: str) -> Optional[Institution]:
         return self.repository.get_institution(institution_id)
 

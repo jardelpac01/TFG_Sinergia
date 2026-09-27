@@ -1,7 +1,6 @@
 import csv
 import re
 import unicodedata
-from calendar import monthrange
 from collections import defaultdict
 from datetime import date
 from io import StringIO
@@ -12,25 +11,12 @@ from sqlmodel import Session
 
 from app.database import get_db
 from app.schemas.author import AuthorReadLite
-from app.schemas.work import WorkReadLite, WorkReadWithRelationships
+from app.schemas.work import WorkListResponse, WorkReadWithRelationships
 from app.services.work_service import WorkService
+from app.utils.dates import month_end, month_start
 
 
 router = APIRouter(prefix="/works", tags=["works"])
-
-
-def _month_start(value: Optional[str]) -> Optional[date]:
-    if not value:
-        return None
-    year, month = (int(part) for part in value.split("-"))
-    return date(year, month, 1)
-
-
-def _month_end(value: Optional[str]) -> Optional[date]:
-    if not value:
-        return None
-    year, month = (int(part) for part in value.split("-"))
-    return date(year, month, monthrange(year, month)[1])
 
 
 def _csv_safe(value: object) -> object:
@@ -57,14 +43,40 @@ def _group_export_works(works):
     return list(groups.values())
 
 
-@router.get("", response_model=List[WorkReadLite])
+@router.get("", response_model=WorkListResponse)
 def list_works(
     q: Optional[str] = Query(default=None, description="Search by title or DOI"),
-    limit: int = Query(default=50, ge=1, le=200),
+    from_month: Optional[str] = Query(
+        default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"
+    ),
+    to_month: Optional[str] = Query(
+        default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"
+    ),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    service = WorkService(db)
-    return service.list_works(q=q, limit=limit)
+    from_date = month_start(from_month)
+    to_date = month_end(to_month)
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(
+            status_code=422,
+            detail="The start month cannot be later than the end month.",
+        )
+    offset = (page - 1) * page_size
+    items, total = WorkService(db).list_works(
+        q=q,
+        from_date=from_date,
+        to_date=to_date,
+        limit=page_size,
+        offset=offset,
+    )
+    return WorkListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/export")
@@ -85,8 +97,8 @@ def export_works(
     ),
     db: Session = Depends(get_db),
 ):
-    from_date = _month_start(from_month)
-    to_date = _month_end(to_month)
+    from_date = month_start(from_month)
+    to_date = month_end(to_month)
     if from_date and to_date and from_date > to_date:
         raise HTTPException(
             status_code=422,

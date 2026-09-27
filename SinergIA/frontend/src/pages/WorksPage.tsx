@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { worksApi } from '../api/endpoints'
 import { PageHeader } from '../components/PageHeader'
@@ -7,8 +7,6 @@ import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
 import { downloadBlob } from '../lib/csv'
-import { paginate } from '../lib/pagination'
-import { groupWorksByTitle } from '../lib/worksGrouping'
 
 const PAGE_SIZE = 10
 
@@ -22,33 +20,22 @@ export function WorksPage() {
   const debouncedSearch = useDebouncedValue(search)
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['works', debouncedSearch],
-    queryFn: ({ signal }) => worksApi.list({ q: debouncedSearch, limit: 200 }, signal),
+    queryKey: ['works', debouncedSearch, fromMonth, toMonth, page],
+    queryFn: ({ signal }) =>
+      worksApi.list(
+        {
+          q: debouncedSearch,
+          from_month: fromMonth,
+          to_month: toMonth,
+          page,
+          page_size: PAGE_SIZE,
+        },
+        signal,
+      ),
   })
 
-  const works = useMemo(() => {
-    const fromYear = fromMonth ? Number(fromMonth.slice(0, 4)) : null
-    const toYear = toMonth ? Number(toMonth.slice(0, 4)) : null
-
-    return (data ?? []).filter((work) => {
-      const workMonth = work.publication_date?.slice(0, 7) ?? null
-
-      if (workMonth) {
-        if (fromMonth && workMonth < fromMonth) return false
-        if (toMonth && workMonth > toMonth) return false
-        return true
-      }
-
-      // Sin fecha exacta: usar el año como aproximación.
-      if (work.publication_year === null) return !fromMonth && !toMonth
-      if (fromYear !== null && work.publication_year < fromYear) return false
-      if (toYear !== null && work.publication_year > toYear) return false
-      return true
-    })
-  }, [data, fromMonth, toMonth])
-
-  const groupedWorks = useMemo(() => groupWorksByTitle(works), [works])
-  const pageItems = useMemo(() => paginate(groupedWorks, page, PAGE_SIZE), [groupedWorks, page])
+  const pageItems = data?.items ?? []
+  const total = data?.total ?? 0
 
   function updateFilter(setter: (value: string) => void, value: string) {
     setter(value)
@@ -86,7 +73,7 @@ export function WorksPage() {
             type="button"
             className="btn-primary"
             onClick={handleExport}
-            disabled={isExporting || groupedWorks.length === 0}
+            disabled={isExporting || total === 0}
           >
             {isExporting ? 'Exportando…' : 'Exportar'}
           </button>
@@ -136,6 +123,7 @@ export function WorksPage() {
             type="month"
             className="input"
             value={fromMonth}
+            max={toMonth || undefined}
             onChange={(event) => updateFilter(setFromMonth, event.target.value)}
           />
         </div>
@@ -148,6 +136,7 @@ export function WorksPage() {
             type="month"
             className="input"
             value={toMonth}
+            min={fromMonth || undefined}
             onChange={(event) => updateFilter(setToMonth, event.target.value)}
           />
         </div>
@@ -158,7 +147,7 @@ export function WorksPage() {
           <LoadingState />
         ) : isError ? (
           <ErrorState title="No se pudieron cargar las publicaciones" description={error.message} />
-        ) : groupedWorks.length === 0 ? (
+        ) : pageItems.length === 0 ? (
           <EmptyState title="Sin resultados" description="Ajusta la búsqueda o el rango de fechas." />
         ) : (
           <>
@@ -214,7 +203,7 @@ export function WorksPage() {
             <Pagination
               page={page}
               pageSize={PAGE_SIZE}
-              totalItems={groupedWorks.length}
+              totalItems={total}
               onPageChange={setPage}
             />
           </>

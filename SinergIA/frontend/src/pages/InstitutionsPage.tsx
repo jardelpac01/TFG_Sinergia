@@ -6,13 +6,15 @@ import { PageHeader } from '../components/PageHeader'
 import { Pagination } from '../components/Pagination'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
 import { useDebouncedValue } from '../lib/useDebouncedValue'
-import { downloadCsv } from '../lib/csv'
+import { downloadBlob } from '../lib/csv'
 
 const PAGE_SIZE = 18
 
 export function InstitutionsPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const debouncedSearch = useDebouncedValue(search)
 
   const { data, isPending, isError, error } = useQuery({
@@ -27,17 +29,24 @@ export function InstitutionsPage() {
   function handleSearchChange(value: string) {
     setSearch(value)
     setPage(1)
+    setExportError(null)
   }
 
-  function handleExport() {
-    downloadCsv('instituciones.csv', institutions, [
-      { header: 'ID', value: (item) => item.id },
-      { header: 'Nombre', value: (item) => item.name },
-      { header: 'País', value: (item) => item.country_code },
-      { header: 'Ciudad', value: (item) => item.city },
-      { header: 'Tipo', value: (item) => item.type },
-      { header: 'ROR', value: (item) => item.ror },
-    ])
+  async function handleExport() {
+    setIsExporting(true)
+    setExportError(null)
+    try {
+      const blob = await institutionsApi.export({ q: debouncedSearch })
+      downloadBlob('instituciones.csv', blob)
+    } catch (exportFailure) {
+      setExportError(
+        exportFailure instanceof Error
+          ? exportFailure.message
+          : 'No se pudieron exportar las instituciones.',
+      )
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   return (
@@ -48,14 +57,20 @@ export function InstitutionsPage() {
         actions={
           <button
             type="button"
-            className="btn-secondary"
+            className="btn-primary"
             onClick={handleExport}
-            disabled={institutions.length === 0}
+            disabled={isExporting || total === 0}
           >
-            Exportar CSV
+            {isExporting ? 'Exportando…' : 'Exportar'}
           </button>
         }
       />
+
+      {exportError && (
+        <div className="mb-6">
+          <ErrorState title="No se pudieron exportar las instituciones" description={exportError} />
+        </div>
+      )}
 
       <div className="card mb-6 p-4">
         <label className="label" htmlFor="institution-search">
@@ -147,4 +162,3 @@ export function InstitutionsPage() {
     </div>
   )
 }
-

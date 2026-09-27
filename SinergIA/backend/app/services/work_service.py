@@ -11,8 +11,21 @@ class WorkService:
     def __init__(self, db: Session):
         self.repository = WorkRepository(db)
 
-    def list_works(self, q: Optional[str] = None, limit: int = 50) -> List[Work]:
-        return self.repository.list_works(q=q, limit=limit)
+    def list_works(
+        self,
+        q: Optional[str] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
+        limit: int = 10,
+        offset: int = 0,
+    ):
+        return self.repository.list_works(
+            q=q,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
 
     def get_work(self, work_id: str) -> Optional[Work]:
         return self.repository.get_work(work_id)

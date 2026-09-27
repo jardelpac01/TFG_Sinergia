@@ -8,7 +8,7 @@ import type {
   ResearchGroup,
   Topic,
   WorkDetail,
-  WorkLite,
+  WorkListItem,
 } from './types'
 
 export interface ListParams {
@@ -19,6 +19,8 @@ export interface ListParams {
 export interface PaginatedListParams {
   q?: string
   research_group_id?: number
+  from_month?: string
+  to_month?: string
   page?: number
   page_size?: number
 }
@@ -32,6 +34,14 @@ export interface WorkExportParams {
   topic_id?: string
   from_month?: string
   to_month?: string
+}
+
+export interface WorkListParams {
+  q?: string
+  from_month?: string
+  to_month?: string
+  page?: number
+  page_size?: number
 }
 
 export const authorsApi = {
@@ -51,8 +61,8 @@ export const authorsApi = {
 }
 
 export const worksApi = {
-  list: (params: ListParams, signal?: AbortSignal) =>
-    apiGet<WorkLite[]>(`/works${buildQuery({ ...params })}`, signal),
+  list: (params: WorkListParams, signal?: AbortSignal) =>
+    apiGet<PaginatedResponse<WorkListItem>>(`/works${buildQuery({ ...params })}`, signal),
   get: (id: string, signal?: AbortSignal) => apiGet<WorkDetail>(`/works/${id}`, signal),
   export: (params: WorkExportParams, signal?: AbortSignal) =>
     apiDownload(`/works/export${buildQuery({ ...params })}`, signal),
@@ -64,6 +74,8 @@ export const institutionsApi = {
   list: (params: PaginatedListParams, signal?: AbortSignal) =>
     apiGet<PaginatedResponse<Institution>>(`/institutions${buildQuery({ ...params })}`, signal),
   get: (id: string, signal?: AbortSignal) => apiGet<Institution>(`/institutions/${id}`, signal),
+  export: (params: ListParams, signal?: AbortSignal) =>
+    apiDownload(`/institutions/export${buildQuery({ ...params })}`, signal),
   authors: (id: string, params: PaginatedListParams, signal?: AbortSignal) =>
     apiGet<PaginatedResponse<AuthorLite>>(
       `/institutions/${id}/authors${buildQuery({ ...params })}`,

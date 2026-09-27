@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { authorsApi, worksApi } from '../api/endpoints'
 import { PageHeader } from '../components/PageHeader'
 import { Pagination } from '../components/Pagination'
@@ -11,23 +11,32 @@ import { downloadBlob } from '../lib/csv'
 const PAGE_SIZE = 18
 
 export function AuthorsPage() {
-  const [search, setSearch] = useState('')
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
   const [researchGroupId, setResearchGroupId] = useState('')
   const [fromMonth, setFromMonth] = useState('')
   const [toMonth, setToMonth] = useState('')
   const [page, setPage] = useState(1)
   const [isExporting, setIsExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportHint, setExportHint] = useState<string | null>(null)
   const debouncedSearch = useDebouncedValue(search)
   const selectedResearchGroupId = researchGroupId ? Number(researchGroupId) : undefined
+  const hasExportFilter =
+    search.trim().length > 0 ||
+    selectedResearchGroupId !== undefined ||
+    Boolean(fromMonth) ||
+    Boolean(toMonth)
 
   const { data, isPending, isError, error } = useQuery({
-    queryKey: ['authors', debouncedSearch, selectedResearchGroupId, page],
+    queryKey: ['authors', debouncedSearch, selectedResearchGroupId, fromMonth, toMonth, page],
     queryFn: ({ signal }) =>
       authorsApi.list(
         {
           q: debouncedSearch,
           research_group_id: selectedResearchGroupId,
+          from_month: fromMonth || undefined,
+          to_month: toMonth || undefined,
           page,
           page_size: PAGE_SIZE,
         },
@@ -43,42 +52,58 @@ export function AuthorsPage() {
   const authors = data?.items ?? []
   const total = data?.total ?? 0
 
+  useEffect(() => {
+    if (!exportHint) return
+
+    const timeoutId = window.setTimeout(() => setExportHint(null), 4000)
+    return () => window.clearTimeout(timeoutId)
+  }, [exportHint])
+
   function handleSearchChange(value: string) {
     setSearch(value)
     setPage(1)
+    setExportHint(null)
   }
 
   function handleResearchGroupChange(value: string) {
     setResearchGroupId(value)
-    if (!value) {
-      setFromMonth('')
-      setToMonth('')
-    }
     setPage(1)
     setExportError(null)
+    setExportHint(null)
   }
 
-  function handleExportDateChange(setter: (value: string) => void, value: string) {
+  function handleDateFilterChange(setter: (value: string) => void, value: string) {
     setter(value)
+    setPage(1)
     setExportError(null)
+    setExportHint(null)
   }
 
   async function handlePublicationsExport() {
-    if (selectedResearchGroupId === undefined) return
+    if (!hasExportFilter) {
+      setExportHint(
+        'Aplica una búsqueda, un grupo o un rango de fechas para poder exportar publicaciones.',
+      )
+      return
+    }
 
     setIsExporting(true)
     setExportError(null)
+    setExportHint(null)
     try {
       const blob = await worksApi.export({
         research_group_id: selectedResearchGroupId,
-        author_q: debouncedSearch,
+        author_q: search.trim() || undefined,
         from_month: fromMonth,
         to_month: toMonth,
       })
       const selectedGroup = researchGroupsQuery.data?.find(
         (group) => group.id === selectedResearchGroupId,
       )
-      const groupLabel = selectedGroup?.code ?? selectedGroup?.name ?? 'grupo'
+      const groupLabel =
+        selectedGroup?.code ??
+        selectedGroup?.name ??
+        (search.trim() ? 'busqueda' : 'fechas')
       const safeGroupLabel = groupLabel.replace(/[^a-zA-Z0-9_-]+/g, '-')
       downloadBlob(`publicaciones-${safeGroupLabel}.csv`, blob)
     } catch (exportFailure) {
@@ -98,16 +123,19 @@ export function AuthorsPage() {
         title="Investigadores"
         titleClassName="text-4xl font-bold tracking-tight text-slate-900"
         actions={
-          selectedResearchGroupId !== undefined ? (
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={handlePublicationsExport}
-              disabled={isExporting || isPending || total === 0}
-            >
-              {isExporting ? 'Exportando…' : 'Exportar publicaciones'}
-            </button>
-          ) : undefined
+          <button
+            type="button"
+            className={`btn-primary ${
+              !hasExportFilter
+                ? 'cursor-not-allowed opacity-50 hover:bg-brand-600 active:scale-100'
+                : ''
+            }`}
+            onClick={handlePublicationsExport}
+            disabled={isExporting || isPending || total === 0}
+            aria-disabled={!hasExportFilter}
+          >
+            {isExporting ? 'Exportando…' : 'Exportar publicaciones'}
+          </button>
         }
       />
 
@@ -153,42 +181,54 @@ export function AuthorsPage() {
             <option value="">Todos los grupos</option>
             {researchGroupsQuery.data?.map((group) => (
               <option key={group.id} value={group.id}>
-                {group.code ? `${group.code} — ${group.name}` : group.name}
+                {group.code ? `${group.name}` : group.name}
               </option>
             ))}
           </select>
         </div>
-        {selectedResearchGroupId !== undefined && (
-          <>
-            <div>
-              <label className="label" htmlFor="group-from-month">
-                Publicaciones desde
-              </label>
-              <input
-                id="group-from-month"
-                type="month"
-                className="input"
-                value={fromMonth}
-                max={toMonth || undefined}
-                onChange={(event) => handleExportDateChange(setFromMonth, event.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label" htmlFor="group-to-month">
-                Publicaciones hasta
-              </label>
-              <input
-                id="group-to-month"
-                type="month"
-                className="input"
-                value={toMonth}
-                min={fromMonth || undefined}
-                onChange={(event) => handleExportDateChange(setToMonth, event.target.value)}
-              />
-            </div>
-          </>
-        )}
+        <div>
+          <label className="label" htmlFor="group-from-month">
+            Fecha desde
+          </label>
+          <input
+            id="group-from-month"
+            type="month"
+            className="input"
+            value={fromMonth}
+            max={toMonth || undefined}
+            onChange={(event) => handleDateFilterChange(setFromMonth, event.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="group-to-month">
+            Fecha hasta
+          </label>
+          <input
+            id="group-to-month"
+            type="month"
+            className="input"
+            value={toMonth}
+            min={fromMonth || undefined}
+            onChange={(event) => handleDateFilterChange(setToMonth, event.target.value)}
+          />
+        </div>
       </div>
+
+      {exportHint && (
+        <div
+          className="fixed bottom-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg"
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700"
+            aria-hidden="true"
+          >
+            !
+          </span>
+          <p>{exportHint}</p>
+        </div>
+      )}
 
       {researchGroupsQuery.isError && (
         <div className="mb-6">

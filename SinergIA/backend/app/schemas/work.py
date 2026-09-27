@@ -23,6 +23,17 @@ class WorkReadLite(WorkBase):
     source_id: Optional[str] = None
 
 
+class WorkListItem(WorkReadLite):
+    versions: List[WorkReadLite] = []
+
+
+class WorkListResponse(SQLModel):
+    items: List[WorkListItem]
+    total: int
+    page: int
+    page_size: int
+
+
 class WorkCreate(WorkBase):
     source_id: Optional[str] = None
 

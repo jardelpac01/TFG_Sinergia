@@ -8,6 +8,7 @@ from app.schemas.author import AuthorCollaboratorsResponse, AuthorListResponse, 
 from app.schemas.research_group import ResearchGroupRead
 from app.schemas.work import WorkReadWithRelationships
 from app.services.author_service import AuthorService
+from app.utils.dates import month_end, month_start
 
 
 router = APIRouter(prefix="/authors", tags=["authors"])
@@ -19,15 +20,30 @@ def list_authors(
     research_group_id: Optional[int] = Query(
         default=None, description="Filter authors by research group"
     ),
+    from_month: Optional[str] = Query(
+        default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"
+    ),
+    to_month: Optional[str] = Query(
+        default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=9, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
+    from_date = month_start(from_month)
+    to_date = month_end(to_month)
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(
+            status_code=422,
+            detail="The start month cannot be later than the end month.",
+        )
     service = AuthorService(db)
     offset = (page - 1) * page_size
     items, total = service.list_authors(
         q=q,
         research_group_id=research_group_id,
+        from_date=from_date,
+        to_date=to_date,
         limit=page_size,
         offset=offset,
     )

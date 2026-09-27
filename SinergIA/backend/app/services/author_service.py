@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional
 
 from sqlmodel import Session
@@ -24,12 +25,16 @@ class AuthorService:
         self,
         q: Optional[str] = None,
         research_group_id: Optional[int] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
         limit: int = 50,
         offset: int = 0,
     ):
         return self.repository.list_authors(
             q=q,
             research_group_id=research_group_id,
+            from_date=from_date,
+            to_date=to_date,
             limit=limit,
             offset=offset,
         )

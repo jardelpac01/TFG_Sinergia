@@ -62,6 +62,10 @@ export interface WorkLite {
   source_id: string | null
 }
 
+export interface WorkListItem extends WorkLite {
+  versions: WorkLite[]
+}
+
 export interface WorkDetail extends WorkLite {
   updated_at: string
   source: Source | null

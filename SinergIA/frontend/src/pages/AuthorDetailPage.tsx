@@ -118,7 +118,7 @@ export function AuthorDetailPage() {
         from_month: fromMonth,
         to_month: toMonth,
       })
-      downloadBlob(`trabajos-${filenameAuthor}-${range}.csv`, blob)
+      downloadBlob(`publicaciones-${filenameAuthor}-${range}.csv`, blob)
     } catch (exportFailure) {
       setExportError(
         exportFailure instanceof Error
@@ -388,7 +388,7 @@ export function AuthorDetailPage() {
                       {coauthor.display_name}
                     </Link>
                     <span className="badge mt-1 inline-block">
-                      {coauthor.shared_works_count} trabajos en común
+                      {coauthor.shared_works_count} publicaciones en común
                     </span>
                   </li>
                 ))}
