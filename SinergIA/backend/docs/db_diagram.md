@@ -1,25 +1,24 @@
-# Current database diagram
 
 
 ```mermaid
 erDiagram
     USERS {
         int id PK
-        varchar username UK "150"
-        varchar email UK "254"
-        varchar password_hash "255"
-        varchar role "20"
-        varchar author_id FK "255"
+        varchar username UK
+        varchar email UK
+        varchar password_hash
+        varchar role
+        varchar author_id FK
         datetime created_at
     }
 
     USER_LOGS {
         int id PK
         int user_id FK
-        varchar action "100"
-        varchar target_entity "100"
+        varchar action
+        varchar target_entity
         json details
-        varchar ip_address "45"
+        varchar ip_address
         datetime created_at
     }
 
@@ -40,6 +39,7 @@ erDiagram
 
     RESEARCH_GROUPS {
         int id PK
+        string code UK
         string name UK
         string description
         string website_url
@@ -48,18 +48,20 @@ erDiagram
     PRISMA_AUTHORS {
         int prisma_id PK
         string display_name
-        string department "255"
-        string orcid UK "255"
-        string openalex_author_id "255"
-        string dialnet_code "255"
+        varchar department
+        varchar research_group_code
+        varchar research_group_name
+        varchar orcid UK
+        varchar openalex_author_id
+        varchar dialnet_code
         datetime updated_at
     }
 
     AUTHOR_MERGE_LOGS {
         int id PK
-        string incoming_author_id "255"
+        varchar incoming_author_id
         string incoming_display_name
-        string matched_author_id FK "255"
+        string matched_author_id FK
         string matched_display_name
         float score
         json score_breakdown
@@ -69,7 +71,7 @@ erDiagram
     INSTITUTIONS {
         string id PK
         string name
-        string country_code "2"
+        varchar country_code
         string ror
         string type
         float geo_lat
@@ -89,7 +91,7 @@ erDiagram
         string issn
         string publisher
         string type
-        string country_code "2"
+        varchar country_code
         bool is_oa
         json raw_data
         datetime updated_at
@@ -101,7 +103,7 @@ erDiagram
         string abstract
         int publication_year
         date publication_date
-        string language "10"
+        varchar language
         string doi
         int cited_by_count
         bool is_oa
@@ -164,30 +166,22 @@ erDiagram
         int oa_works_count
     }
 
-    USERS ||--o| AUTHORS : "author_id"
-    USERS ||--o{ USER_LOGS : "user_id"
-
-    AUTHORS ||--o| INSTITUTIONS : "last_known_institution_id"
-    AUTHORS ||--o| RESEARCH_GROUPS : "research_group_id"
-    AUTHORS ||--o| AUTHOR_MERGE_LOGS : "matched_author_id"
-    WORKS }o--|| SOURCES : "source_id"
-
-    AUTHORS ||--o{ AUTHOR_WORKS : "author_id"
-    WORKS ||--o{ AUTHOR_WORKS : "work_id"
-
-    AUTHORS ||--o{ AUTHOR_WORK_AFFILIATIONS : "author_id"
-    WORKS ||--o{ AUTHOR_WORK_AFFILIATIONS : "work_id"
-    INSTITUTIONS ||--o{ AUTHOR_WORK_AFFILIATIONS : "institution_id"
-
-    WORKS ||--o{ WORK_TOPICS : "work_id"
-    TOPICS ||--o{ WORK_TOPICS : "topic_id"
-
-    AUTHORS ||--o{ AUTHOR_TOPICS : "author_id"
-    TOPICS ||--o{ AUTHOR_TOPICS : "topic_id"
-
-    WORKS ||--o{ WORK_REFERENCES : "work_id"
-    WORKS ||--o{ WORK_REFERENCES : "referenced_work_id"
-
-    AUTHORS ||--o{ AUTHOR_YEARLY_METRICS : "author_id"
+    AUTHORS o|--o{ USERS : author_id
+    USERS o|--o{ USER_LOGS : user_id
+    INSTITUTIONS o|--o{ AUTHORS : last_known_institution_id
+    RESEARCH_GROUPS o|--o{ AUTHORS : research_group_id
+    AUTHORS ||--o{ AUTHOR_MERGE_LOGS : matched_author_id
+    SOURCES o|--o{ WORKS : source_id
+    AUTHORS ||--o{ AUTHOR_WORKS : author_id
+    WORKS ||--o{ AUTHOR_WORKS : work_id
+    AUTHORS ||--o{ AUTHOR_WORK_AFFILIATIONS : author_id
+    WORKS ||--o{ AUTHOR_WORK_AFFILIATIONS : work_id
+    INSTITUTIONS ||--o{ AUTHOR_WORK_AFFILIATIONS : institution_id
+    WORKS ||--o{ WORK_TOPICS : work_id
+    TOPICS ||--o{ WORK_TOPICS : topic_id
+    AUTHORS ||--o{ AUTHOR_TOPICS : author_id
+    TOPICS ||--o{ AUTHOR_TOPICS : topic_id
+    WORKS ||--o{ WORK_REFERENCES : work_id
+    WORKS ||--o{ WORK_REFERENCES : referenced_work_id
+    AUTHORS ||--o{ AUTHOR_YEARLY_METRICS : author_id
 ```
-
