@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 from sqlalchemy import func
@@ -13,12 +14,18 @@ class InstitutionRepository:
 
     @staticmethod
     def _search_condition(q: Optional[str] = None):
-        if not q:
+        search = (q or "").strip()
+        if not search:
             return None
-        search = f"%{q.lower()}%"
+        if re.fullmatch(r"[A-Za-z]{2}", search):
+            return func.upper(Institution.country_code) == search.upper()
+
+        search_pattern = f"%{search.lower()}%"
         return (
-            func.unaccent(func.lower(Institution.name)).ilike(func.unaccent(search))
-        ) | (Institution.country_code.ilike(search))
+            func.unaccent(func.lower(Institution.name)).ilike(
+                func.unaccent(search_pattern)
+            )
+        )
 
     def list_institutions(self, q: Optional[str] = None, limit: int = 50, offset: int = 0):
         statement = select(Institution)

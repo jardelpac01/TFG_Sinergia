@@ -21,7 +21,7 @@ export function HomePage() {
     <div className="flex min-h-[75vh] flex-col items-center justify-center">
       <div className="w-full max-w-2xl text-center">
         <h1 className="font-display text-5xl font-extrabold tracking-tight text-slate-900 sm:text-6xl">
-          SinergIA
+          Sinergia
         </h1>
         <p className="mt-4 text-base text-slate-600">
         Conectando el conocimiento: Busca investigadores, consulta sus publicaciones.

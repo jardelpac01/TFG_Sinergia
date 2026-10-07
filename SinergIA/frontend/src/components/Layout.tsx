@@ -39,12 +39,12 @@ export function Layout() {
           >
             <img
               src="/logo.jpg"
-              alt="Logo SinergIA"
+              alt="Logo Sinergia"
               className="h-16 w-16 shrink-0 rounded-xl object-contain"
             />
             {!collapsed && (
               <span className="whitespace-nowrap font-display text-2xl font-light text-slate-900">
-                SinergIA
+                Sinergia
               </span>
             )}
           </NavLink>
@@ -175,7 +175,7 @@ export function Layout() {
           <Outlet />
         </main>
         <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-400">
-          SinergIA © 2026
+          Sinergia © 2026
         </footer>
       </div>
     </div>

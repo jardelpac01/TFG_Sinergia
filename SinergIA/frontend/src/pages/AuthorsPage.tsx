@@ -257,7 +257,7 @@ export function AuthorsPage() {
         <div className="card">
           <EmptyState
             title="Sin resultados"
-            description="Prueba con otro nombre o revisa que la base de datos tenga investigadores cargados."
+            description="Prueba con otro investigador."
           />
         </div>
       ) : (
