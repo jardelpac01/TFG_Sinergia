@@ -1,4 +1,4 @@
-# SinergIA · Frontend
+# Sinergia · Frontend
 
 Interfaz web para explorar la producción científica, las redes de colaboración y exportar resultados.
 
@@ -27,13 +27,7 @@ npm run dev
 
 La aplicación queda disponible en `http://localhost:5173`.
 
-### Arrancar backend y frontend a la vez
 
-Desde `SinergIA/`:
-
-```powershell
-.\start-dev.ps1
-```
 
 ## Conexión con la API
 
