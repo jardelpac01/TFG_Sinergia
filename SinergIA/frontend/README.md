@@ -27,14 +27,6 @@ npm run dev
 
 La aplicación queda disponible en `http://localhost:5173`.
 
-### Arrancar backend y frontend a la vez
-
-Desde `SinergIA/`:
-
-```powershell
-.\start-dev.ps1
-```
-
 ## Conexión con la API
 
 En desarrollo, las peticiones a `/api` se redirigen a `http://127.0.0.1:8000`
