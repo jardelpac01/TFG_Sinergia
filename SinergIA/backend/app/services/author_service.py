@@ -1,0 +1,121 @@
+from datetime import date
+from typing import List, Optional
+
+from sqlmodel import Session
+
+from app.models import Author, Work
+from app.repositories.author_repository import AuthorRepository
+from app.schemas.author import (
+    AuthorReadLite,
+    AuthorNetwork,
+    CityConnection,
+    CoAuthorConnection,
+    CoAuthorLocation,
+    CountryConnection,
+    WorksByYear,
+)
+
+
+class AuthorService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.repository = AuthorRepository(db)
+
+    def list_authors(
+        self,
+        q: Optional[str] = None,
+        research_group_id: Optional[int] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        return self.repository.list_authors(
+            q=q,
+            research_group_id=research_group_id,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
+
+    def list_research_groups(self):
+        return self.repository.list_research_groups()
+
+    def get_author(self, author_id: str) -> Optional[Author]:
+        return self.repository.get_author(author_id)
+
+    def get_authors_by_name(self, name: str) -> List[Author]:
+        return self.repository.get_author_by_name(name)
+
+    def get_author_works(self, author_id: str) -> List[Work]:
+        return self.repository.get_author_works(author_id)
+
+    def get_author_network(self, author_id: str) -> Optional[AuthorNetwork]:
+        author = self.get_author(author_id)
+        if not author:
+            return None
+
+        coauthors = [
+            CoAuthorConnection(
+                id=coauthor.id,
+                display_name=coauthor.display_name,
+                shared_works_count=int(coauthor.shared_works_count),
+            )
+            for coauthor in self.repository.get_coauthors(author_id)
+        ]
+
+        countries = [
+            CountryConnection(
+                country_code=country.country_code,
+                works_count=int(country.works_count),
+            )
+            for country in self.repository.get_country_collaborations(author_id)
+        ]
+
+        cities = [
+            CityConnection(
+                city=city.city,
+                country_code=city.country_code,
+                geo_lat=float(city.geo_lat),
+                geo_lon=float(city.geo_lon),
+                authors_count=int(city.authors_count),
+            )
+            for city in self.repository.get_city_collaborations(author_id)
+        ]
+
+        works_by_year = [
+            WorksByYear(year=int(row.publication_year), works_count=int(row.works_count))
+            for row in self.repository.get_works_by_year(author_id)
+        ]
+
+        return AuthorNetwork(
+            author=AuthorReadLite(
+                id=author.id,
+                display_name=author.display_name,
+                orcid=author.orcid,
+                research_group_id=author.research_group_id,
+                research_group_name=author.research_group_name,
+            ),
+            coauthors=coauthors,
+            country_collaborations=countries,
+            city_collaborations=cities,
+            works_by_year=works_by_year,
+        )
+
+    def get_collaborators_with_location(self, author_id: str) -> List[CoAuthorLocation]:
+        collaborators = []
+        for coauthor, shared_works_count in self.repository.get_coauthors_with_location(author_id):
+            institution = coauthor.last_known_institution
+            collaborators.append(
+                CoAuthorLocation(
+                    id=coauthor.id,
+                    display_name=coauthor.display_name,
+                    orcid=coauthor.orcid,
+                    shared_works_count=int(shared_works_count),
+                    institution_name=institution.name if institution else None,
+                    country_code=institution.country_code if institution else None,
+                    city=institution.city if institution else None,
+                )
+            )
+        return collaborators

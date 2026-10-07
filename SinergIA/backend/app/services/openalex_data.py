@@ -1,24 +1,138 @@
 import re
-import requests
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
 from sqlalchemy.orm import Session
 
 from app.repositories.ingestion_openalex_data import IngestionRepository
+from app.repositories.prisma_author import PrismaAuthorRepository
+from app.schemas.openalex_ingestion import (
+    OpenAlexAuthorsBatchIngestItem,
+    OpenAlexAuthorsBatchIngestResponse,
+)
+from app.schemas.openalex_ingestion import (
+    OpenAlexAuthorsBatchIngestItem,
+    OpenAlexAuthorsBatchIngestResponse,
+)
+from app.services.author_identity import AuthorIdentityService
+from app.services.http_client import fetch_with_retries
+from app.services.prisma_scraper import (
+    PrismaScraperError,
+    fetch_researcher_profile,
+    list_researcher_ids_by_department,
+)
+from app.services.http_client import fetch_with_retries
 
 
-HEADERS = {"User-Agent": "SinergiaTFG/1.0 (mailto:tu_correo@us.es)"}
 ORCID_REGEX = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
+
+
+class OpenAlexUpstreamError(Exception):
+    """Raised when OpenAlex cannot be reached or returns a non-recoverable error."""
+
+
+class AuthorNotFoundError(Exception):
+    """Raised when no author can be found in OpenAlex for a given identifier."""
+
+
+class WorkNotFoundError(Exception):
+    """Raised when no work can be found in OpenAlex for a given identifier."""
+
+
+@dataclass
+class AuthorSearchAndIngestResult:
+
+    status: str
+    total_results: int
+    selected_by: str | None = None
+    author_id: str | None = None
+    candidates: list[dict] = field(default_factory=list)
 
 
 class OpenAlexService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = IngestionRepository(db)
+        self.prisma_repo = PrismaAuthorRepository(db)
+        self.author_identity = AuthorIdentityService()
+
+    def upsert_author(self, author_data: dict) -> str | None:
+        author_data = self.author_identity.prepare_author_data(author_data)
+        orcid = author_data["orcid"]
+        incoming_author_id = author_data.get("id")
+
+        prisma_match = (
+            self.prisma_repo.get_by_openalex_id(incoming_author_id)
+            if incoming_author_id
+            else None
+        )
+        if prisma_match is None:
+            prisma_match = self.author_identity.match_via_prisma_researchers_by_name(
+                display_name=author_data["display_name"],
+                display_name_alternatives=author_data.get("display_name_alternatives"),
+                prisma_authors=self.prisma_repo.get_all_with_openalex_id(),
+            )
+
+        if prisma_match is not None:
+            author_data["id"] = prisma_match.openalex_author_id
+            openalex_name = author_data.get("display_name")
+            author_data["display_name"] = prisma_match.display_name
+            if openalex_name and openalex_name != prisma_match.display_name:
+                author_data["display_name_alternatives"] = list(
+                    dict.fromkeys(
+                        [*(author_data.get("display_name_alternatives") or []), openalex_name]
+                    )
+                )
+            existing_author = self.repo.get_author(prisma_match.openalex_author_id)
+        else:
+            existing_author = self.repo.get_author_by_orcid(orcid) if orcid else None
+            if existing_author is None and incoming_author_id:
+                existing_author = self.repo.get_author(incoming_author_id)
+
+        if existing_author is None and prisma_match is None:
+            match = self.author_identity.find_matching_author(
+                display_name=author_data["display_name"],
+                institution_id=author_data.get("last_known_institution_id"),
+                candidates=self.repo.get_authors_with_display_name(),
+                orcid=orcid,
+            )
+            existing_author = match.author
+
+        return self.repo.upsert_author(author_data, existing_author)
 
     def clean_id(self, url: str) -> str | None:
         """Extracts the OpenAlex entity ID from a full URL (e.g. https://openalex.org/A123 → A123)."""
         if not url:
             return None
         return url.split("/")[-1]
+
+    def _fetch_json(
+        self,
+        url: str,
+        params: dict | None = None,
+        max_attempts: int = 4,
+        backoff_seconds: float = 1.0,
+    ) -> dict | None:
+        response = fetch_with_retries(
+            url,
+            on_error=OpenAlexUpstreamError,
+            params=params,
+            max_attempts=max_attempts,
+            backoff_seconds=backoff_seconds,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+
+        if response.status_code == 404:
+            return None
+
+        raise OpenAlexUpstreamError(
+            f"OpenAlex returned unexpected status {response.status_code}."
+        )
 
     def store_institution(self, institution_data: dict | None) -> str | None:
         """Persists an institution from OpenAlex and returns its normalized ID."""
@@ -27,16 +141,34 @@ class OpenAlexService:
         institution_id = self.clean_id(institution_data.get("id"))
         if not institution_id:
             return None
+
         geo = institution_data.get("geo") or {}
+        geo_lat = geo.get("latitude")
+        geo_lon = geo.get("longitude")
+        city = geo.get("city")
+
+        if geo_lat is None or geo_lon is None:
+            existing = self.repo.get_institution(institution_id)
+            already_has_geo = existing is not None and existing.geo_lat is not None and existing.geo_lon is not None
+            if not already_has_geo:
+                full_institution = self._fetch_json(
+                    f"https://api.openalex.org/institutions/{institution_id}"
+                )
+                if full_institution:
+                    full_geo = full_institution.get("geo") or {}
+                    geo_lat = full_geo.get("latitude")
+                    geo_lon = full_geo.get("longitude")
+                    city = full_geo.get("city")
+
         self.repo.upsert_institution({
             "id": institution_id,
             "display_name": institution_data.get("display_name"),
             "country_code": institution_data.get("country_code"),
             "ror": institution_data.get("ror"),
             "type": institution_data.get("type"),
-            "geo_lat": geo.get("latitude"),
-            "geo_lon": geo.get("longitude"),
-            "city": geo.get("city"),
+            "geo_lat": geo_lat,
+            "geo_lon": geo_lon,
+            "city": city,
         })
         return institution_id
 
@@ -78,6 +210,99 @@ class OpenAlexService:
         })
         return source_id
 
+    def search_authors_by_name(self, name: str, page: int = 1, per_page: int = 10) -> tuple[int, list[dict]]:
+        """Searches OpenAlex authors by name and returns normalized candidates."""
+        data = self._fetch_json(
+            "https://api.openalex.org/authors",
+            params={"search": name, "page": page, "per-page": per_page},
+        )
+        if not data:
+            return 0, []
+
+        items: list[dict] = []
+        for author_data in data.get("results", []):
+            openalex_id = self.clean_id(author_data.get("id"))
+            if not openalex_id:
+                continue
+
+            last_known_institution = author_data.get("last_known_institution") or {}
+            display_name_alternatives = [
+                str(value).strip()
+                for value in (author_data.get("display_name_alternatives") or [])
+                if str(value).strip()
+            ]
+            items.append(
+                {
+                    "openalex_id": openalex_id,
+                    "display_name": author_data.get("display_name") or "Unknown",
+                    "display_name_alternatives": display_name_alternatives,
+                    "orcid": author_data.get("orcid"),
+                    "works_count": int(author_data.get("works_count", 0) or 0),
+                    "cited_by_count": int(author_data.get("cited_by_count", 0) or 0),
+                    "last_known_institution": last_known_institution.get("display_name"),
+                }
+            )
+
+        total_results = int((data.get("meta") or {}).get("count", 0) or 0)
+        return total_results, items
+
+    def search_and_ingest_author_by_name(
+        self, name: str, force: bool = False, per_page: int = 10
+    ) -> AuthorSearchAndIngestResult:
+        """Searches authors by name and ingests only safe matches unless force is enabled."""
+        total_results, candidates = self.search_authors_by_name(name=name, page=1, per_page=per_page)
+
+        if not candidates:
+            return AuthorSearchAndIngestResult(status="not_found", total_results=total_results, candidates=[])
+
+        normalized_name = name.strip().casefold()
+        exact_matches = [
+            candidate
+            for candidate in candidates
+            if (candidate.get("display_name") or "").strip().casefold() == normalized_name
+            or normalized_name in {
+                alternative.strip().casefold()
+                for alternative in candidate.get("display_name_alternatives", [])
+            }
+        ]
+
+        selected_candidate = None
+        selected_by = None
+
+        if len(exact_matches) == 1:
+            selected_candidate = exact_matches[0]
+            selected_by = "exact_name_or_alternative_match"
+        elif len(candidates) == 1:
+            selected_candidate = candidates[0]
+            selected_by = "single_result"
+        elif force:
+            selected_candidate = candidates[0]
+            selected_by = "forced_first_result"
+        else:
+            return AuthorSearchAndIngestResult(
+                status="ambiguous",
+                total_results=total_results,
+                selected_by=None,
+                candidates=candidates,
+            )
+
+        author_id = self.fetch_and_store_author_by_identifier(selected_candidate["openalex_id"])
+        if not author_id:
+            return AuthorSearchAndIngestResult(
+                status="not_found",
+                total_results=total_results,
+                selected_by=selected_by,
+                candidates=candidates,
+            )
+
+        return AuthorSearchAndIngestResult(
+            status="ingested",
+            author_id=author_id,
+            selected_by=selected_by,
+            total_results=total_results,
+            candidates=candidates,
+        )
+
     def fetch_and_store_author(self, orcid: str) -> str | None:
         """
         Validates the ORCID format, fetches the author profile from OpenAlex
@@ -88,19 +313,19 @@ class OpenAlexService:
             raise ValueError(f"Invalid ORCID format: '{orcid}'. Expected format: 0000-0001-2345-6789")
 
         url = f"https://api.openalex.org/authors/orcid:{orcid}"
-        response = requests.get(url, headers=HEADERS)
+        response = self._fetch_json(url)
 
-        if response.status_code != 200:
+        if not response:
             return None
 
-        data = response.json()
+        data = response
         author_id = self.clean_id(data.get("id"))
         if not author_id:
             return None
 
         inst_id = self.store_institution(data.get("last_known_institution"))
 
-        self.repo.upsert_author({
+        author_id = self.upsert_author({
             "id": author_id,
             "display_name": data.get("display_name"),
             "orcid": data.get("orcid"),
@@ -130,22 +355,26 @@ class OpenAlexService:
         and persists each work along with its topics, co-authors and affiliations.
         """
         cursor = "*"
+        fetched_work_ids: set[str] = set()
+        sync_completed = True
 
         while cursor:
             url = (
                 f"https://api.openalex.org/works"
                 f"?filter=author.id:{author_openalex_id}&cursor={cursor}"
             )
-            response = requests.get(url, headers=HEADERS)
-            if response.status_code != 200:
+            response = self._fetch_json(url)
+            if not response:
+                sync_completed = False
                 break
 
-            data = response.json()
+            data = response
 
             for work_data in data.get("results", []):
                 work_id = self.clean_id(work_data.get("id"))
                 if not work_id:
                     continue
+                fetched_work_ids.add(work_id)
 
                 primary_location = work_data.get("primary_location") or {}
                 source_id = self.store_source(primary_location.get("source"))
@@ -202,12 +431,24 @@ class OpenAlexService:
                     if not authorship_author_id:
                         continue
 
-                    # Store co-authors with minimal data to avoid extra API calls
+                    authorship_institution_ids = [
+                        institution_id
+                        for institution_id in (
+                            self.store_institution(institution_data)
+                            for institution_data in authorship.get("institutions", [])
+                        )
+                        if institution_id
+                    ]
+
+                    # Preserve the main author record and only upsert real co-authors.
                     if authorship_author_id != author_openalex_id:
-                        self.repo.upsert_author({
+                        authorship_author_id = self.upsert_author({
                             "id": authorship_author_id,
                             "display_name": author_data.get("display_name"),
                             "orcid": author_data.get("orcid"),
+                            "last_known_institution_id": (
+                                authorship_institution_ids[0] if authorship_institution_ids else None
+                            ),
                         })
 
                     self.repo.add_author_work_relation(
@@ -217,14 +458,358 @@ class OpenAlexService:
                         is_corr=authorship.get("is_corresponding", False),
                     )
 
-                    for institution_data in authorship.get("institutions", []):
-                        institution_id = self.store_institution(institution_data)
-                        if institution_id:
-                            self.repo.add_author_work_affiliation(
-                                author_id=authorship_author_id,
-                                work_id=work_id,
-                                institution_id=institution_id,
-                            )
+                    for institution_id in authorship_institution_ids:
+                        self.repo.add_author_work_affiliation(
+                            author_id=authorship_author_id,
+                            work_id=work_id,
+                            institution_id=institution_id,
+                        )
 
+            if sync_completed:
+                self.repo.remove_author_work_relations_not_in(
+                    author_openalex_id,
+                    fetched_work_ids,
+                )
             self.repo.commit()
             cursor = data.get("meta", {}).get("next_cursor")
+
+    def fetch_and_store_author_by_identifier(self, author_identifier: str) -> str | None:
+        """Fetches an author by ORCID, OpenAlex ID or OpenAlex URL."""
+        canonical_orcid = self.author_identity.canonicalize_orcid(author_identifier)
+        if canonical_orcid:
+            return self.fetch_and_store_author(canonical_orcid.rsplit("/", 1)[-1])
+
+        author_id = self.clean_id(author_identifier)
+        if not author_id:
+            return None
+
+        data = self._fetch_json(f"https://api.openalex.org/authors/{author_id}")
+        if not data:
+            return None
+
+        author_id = self.clean_id(data.get("id"))
+        if not author_id:
+            return None
+
+        inst_id = self.store_institution(data.get("last_known_institution"))
+
+        author_id = self.upsert_author({
+            "id": author_id,
+            "display_name": data.get("display_name"),
+            "orcid": data.get("orcid"),
+            "h_index": data.get("summary_stats", {}).get("h_index", 0),
+            "works_count": data.get("works_count", 0),
+            "cited_by_count": data.get("cited_by_count", 0),
+            "counts_by_year": data.get("counts_by_year", []),
+            "last_known_institution_id": inst_id,
+        })
+
+        for topic_data in data.get("topics", []):
+            topic_id = self.store_topic(topic_data)
+            if topic_id:
+                self.repo.add_author_topic_relation(
+                    author_id=author_id,
+                    topic_id=topic_id,
+                    score=float(topic_data.get("score", 0.0) or 0.0),
+                )
+
+        self.repo.commit()
+        self.fetch_and_store_works(author_id)
+        return author_id
+
+    def fetch_and_store_work_by_identifier(self, work_identifier: str) -> str | None:
+        """Fetches a single work by OpenAlex ID or URL and persists it."""
+        work_id = self.clean_id(work_identifier)
+        if not work_id:
+            return None
+
+        data = self._fetch_json(f"https://api.openalex.org/works/{work_id}")
+        if not data:
+            return None
+
+        work_id = self.clean_id(data.get("id"))
+        if not work_id:
+            return None
+
+        primary_location = data.get("primary_location") or {}
+        source_id = self.store_source(primary_location.get("source"))
+
+        self.repo.upsert_work({
+            "id": work_id,
+            "title": data.get("title"),
+            "publication_year": data.get("publication_year"),
+            "publication_date": data.get("publication_date"),
+            "language": data.get("language"),
+            "doi": data.get("doi"),
+            "cited_by_count": data.get("cited_by_count", 0),
+            "is_oa": data.get("open_access", {}).get("is_oa", False),
+            "oa_status": data.get("open_access", {}).get("oa_status"),
+            "is_retracted": data.get("is_retracted", False),
+            "type": data.get("type"),
+            "source_id": source_id,
+        })
+
+        work_topics = data.get("topics", [])
+        primary_topic_id = self.clean_id((data.get("primary_topic") or {}).get("id"))
+
+        for topic_data in work_topics:
+            topic_id = self.store_topic(topic_data)
+            if topic_id:
+                self.repo.add_work_topic_relation(
+                    work_id=work_id,
+                    topic_id=topic_id,
+                    score=float(topic_data.get("score", 0.0) or 0.0),
+                    is_primary=(topic_id == primary_topic_id),
+                )
+
+        if primary_topic_id and not any(
+            self.clean_id(topic.get("id")) == primary_topic_id for topic in work_topics
+        ):
+            primary_topic = data.get("primary_topic") or {}
+            topic_id = self.store_topic(primary_topic)
+            if topic_id:
+                self.repo.add_work_topic_relation(
+                    work_id=work_id,
+                    topic_id=topic_id,
+                    score=float(primary_topic.get("score", 0.0) or 0.0),
+                    is_primary=True,
+                )
+
+        for authorship in data.get("authorships", []):
+            author_data = authorship.get("author") or {}
+            authorship_author_id = self.clean_id(author_data.get("id"))
+            if not authorship_author_id:
+                continue
+
+            authorship_institution_ids = [
+                institution_id
+                for institution_id in (
+                    self.store_institution(institution_data)
+                    for institution_data in authorship.get("institutions", [])
+                )
+                if institution_id
+            ]
+
+            # Keep the main author record intact and only upsert true co-authors.
+            if authorship_author_id != self.clean_id(data.get("id")):
+                authorship_author_id = self.upsert_author({
+                    "id": authorship_author_id,
+                    "display_name": author_data.get("display_name"),
+                    "orcid": author_data.get("orcid"),
+                    "last_known_institution_id": (
+                        authorship_institution_ids[0] if authorship_institution_ids else None
+                    ),
+                })
+
+            self.repo.add_author_work_relation(
+                author_id=authorship_author_id,
+                work_id=work_id,
+                position=authorship.get("author_position"),
+                is_corr=authorship.get("is_corresponding", False),
+            )
+
+            for institution_id in authorship_institution_ids:
+                self.repo.add_author_work_affiliation(
+                    author_id=authorship_author_id,
+                    work_id=work_id,
+                    institution_id=institution_id,
+                )
+
+        self.repo.commit()
+        return work_id
+
+    def fetch_and_store_author_or_raise(self, author_identifier: str) -> str:
+        """Same as fetch_and_store_author_by_identifier, but raises AuthorNotFoundError
+        instead of returning None when no author is found.
+        """
+        author_id = self.fetch_and_store_author_by_identifier(author_identifier)
+        if not author_id:
+            raise AuthorNotFoundError(f"No author was found for identifier {author_identifier}.")
+        return author_id
+
+    def fetch_and_store_work_or_raise(self, work_identifier: str) -> str:
+        """Same as fetch_and_store_work_by_identifier, but raises WorkNotFoundError
+        instead of returning None when no work is found.
+        """
+        work_id = self.fetch_and_store_work_by_identifier(work_identifier)
+        if not work_id:
+            raise WorkNotFoundError(f"No work was found for identifier {work_identifier}.")
+        return work_id
+
+    def ingest_authors_by_prisma_department(
+        self,
+        department_code: str,
+    ) -> list[dict]:
+        """Ingests authors from Prisma for a given department, using the department code."""
+        try:
+            prisma_ids = list_researcher_ids_by_department(department_code)
+        except PrismaScraperError as exc:
+            raise OpenAlexUpstreamError(str(exc)) from exc
+
+        profiles: list[dict] = []
+        results_by_prisma_id: dict[int, dict] = {}
+
+        # Load every Prisma identity first. Works from early researchers may contain
+        # department colleagues as co-authors, and those co-authors must already be
+        # known here so their canonical Prisma ID is used from the start.
+        for prisma_id in prisma_ids:
+            try:
+                profile = fetch_researcher_profile(prisma_id)
+            except PrismaScraperError as exc:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "status": "failed",
+                    "error": str(exc),
+                }
+                continue
+
+            if profile is None:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "status": "failed",
+                    "error": "Could not parse Prisma profile.",
+                }
+                continue
+
+            self.prisma_repo.upsert(profile)
+            profiles.append(profile)
+
+        for profile in profiles:
+            prisma_id = profile["prisma_id"]
+            orcid = self.author_identity.canonicalize_orcid(profile.get("orcid"))
+            identifier = profile.get("openalex_author_id") or orcid
+            if not identifier:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "display_name": profile["display_name"],
+                    "research_group_code": profile.get("research_group_code"),
+                    "research_group_name": profile.get("research_group_name"),
+                    "status": "skipped",
+                    "error": "No ORCID or OpenAlex ID linked in Prisma.",
+                }
+                continue
+
+            existing_author = None
+            if profile.get("openalex_author_id"):
+                existing_author = self.repo.get_author(profile["openalex_author_id"])
+            if existing_author is None and orcid:
+                existing_author = self.repo.get_author_by_orcid(orcid)
+
+            is_new_author = existing_author is None
+
+            try:
+                author_id = self.fetch_and_store_author_by_identifier(identifier)
+            except OpenAlexUpstreamError as exc:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "display_name": profile["display_name"],
+                    "research_group_code": profile.get("research_group_code"),
+                    "research_group_name": profile.get("research_group_name"),
+                    "status": "failed",
+                    "error": str(exc),
+                }
+                continue
+
+            if not author_id:
+                results_by_prisma_id[prisma_id] = {
+                    "prisma_id": prisma_id,
+                    "display_name": profile["display_name"],
+                    "research_group_code": profile.get("research_group_code"),
+                    "research_group_name": profile.get("research_group_name"),
+                    "status": "failed",
+                    "error": "No author was found in OpenAlex for this identifier.",
+                }
+                continue
+
+            research_group_code = profile.get("research_group_code")
+            research_group_name = profile.get("research_group_name")
+            research_group_id = None
+            if research_group_code and research_group_name:
+                research_group = self.repo.upsert_research_group(
+                    code=research_group_code,
+                    name=research_group_name,
+                    website_url=(
+                        f"https://prisma.us.es/colectivo/grupo/{research_group_code}"
+                    ),
+                )
+                research_group_id = research_group.id
+            self.repo.assign_author_research_group(author_id, research_group_id)
+            self.repo.commit()
+
+            results_by_prisma_id[prisma_id] = {
+                "prisma_id": prisma_id,
+                "display_name": profile["display_name"],
+                "research_group_code": research_group_code,
+                "research_group_name": research_group_name,
+                "status": "created" if is_new_author else "updated",
+                "author_id": author_id,
+            }
+
+        return [results_by_prisma_id[prisma_id] for prisma_id in prisma_ids]
+
+    def ingest_authors_batch(
+        self,
+        identifiers: list[str],
+        ingest_author: Callable[[str], str | None],
+        empty_identifier_message: str,
+        not_found_message: str,
+    ) -> OpenAlexAuthorsBatchIngestResponse:
+        """Ingests a batch of author identifiers (ORCIDs or OpenAlex identifiers),
+        collecting per-item successes and failures instead of failing the whole batch.
+        """
+        results: list[OpenAlexAuthorsBatchIngestItem] = []
+        ingested = 0
+        failed = 0
+
+        for raw_identifier in identifiers:
+            identifier = raw_identifier.strip()
+            if not identifier:
+                failed += 1
+                results.append(
+                    OpenAlexAuthorsBatchIngestItem(
+                        identifier=raw_identifier,
+                        status="failed",
+                        error=empty_identifier_message,
+                    )
+                )
+                continue
+
+            try:
+                author_id = ingest_author(identifier)
+            except (ValueError, OpenAlexUpstreamError) as exc:
+                failed += 1
+                results.append(
+                    OpenAlexAuthorsBatchIngestItem(
+                        identifier=identifier,
+                        status="failed",
+                        error=str(exc),
+                    )
+                )
+                continue
+
+            if not author_id:
+                failed += 1
+                results.append(
+                    OpenAlexAuthorsBatchIngestItem(
+                        identifier=identifier,
+                        status="failed",
+                        error=not_found_message,
+                    )
+                )
+                continue
+
+            ingested += 1
+            results.append(
+                OpenAlexAuthorsBatchIngestItem(
+                    identifier=identifier,
+                    status="ingested",
+                    author_id=author_id,
+                )
+            )
+
+        return OpenAlexAuthorsBatchIngestResponse(
+            requested=len(identifiers),
+            ingested=ingested,
+            failed=failed,
+            results=results,
+        )
